@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import argparse
+import json
+import zipfile
+from pathlib import Path
+
+
+ARCHIVE_TIMESTAMP = (2026, 1, 1, 0, 0, 0)
+LOCAL_DEVELOPMENT_HOST_PERMISSIONS = {
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*",
+}
+
+
+def package_extension(
+    source: Path,
+    output: Path,
+    *,
+    production: bool = False,
+) -> dict[str, object]:
+    manifest = source / "manifest.json"
+    if not manifest.is_file():
+        raise ValueError("extension manifest.json does not exist")
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
+    if metadata.get("manifest_version") != 3:
+        raise ValueError("extension must use Manifest V3")
+
+    files = sorted(
+        path
+        for path in source.rglob("*")
+        if path.is_file()
+        and not any(part.startswith(".") for part in path.relative_to(source).parts)
+        and "__pycache__" not in path.parts
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(
+        output,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    ) as archive:
+        for path in files:
+            relative = path.relative_to(source).as_posix()
+            info = zipfile.ZipInfo(relative, ARCHIVE_TIMESTAMP)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            payload = path.read_bytes()
+            if production and relative == "manifest.json":
+                production_metadata = dict(metadata)
+                production_metadata["host_permissions"] = [
+                    permission
+                    for permission in metadata.get("host_permissions", [])
+                    if permission
+                    not in LOCAL_DEVELOPMENT_HOST_PERMISSIONS
+                ]
+                payload = (
+                    json.dumps(
+                        production_metadata,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            archive.writestr(info, payload)
+    return {
+        "output": str(output),
+        "version": metadata.get("version"),
+        "production": production,
+        "files": [path.relative_to(source).as_posix() for path in files],
+        "bytes": output.stat().st_size,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help="remove local development host permissions from the package",
+    )
+    args = parser.parse_args()
+    result = package_extension(
+        args.source.expanduser().resolve(),
+        args.output.expanduser().resolve(),
+        production=args.production,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

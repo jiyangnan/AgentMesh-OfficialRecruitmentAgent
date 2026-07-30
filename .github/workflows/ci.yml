@@ -1,0 +1,44 @@
+name: 公开客户端质量门槛
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: 安装与测试
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m compileall -q src tests
+          pytest
+
+      - name: 构建公开客户端资产
+        run: |
+          python -m pip wheel --no-deps --wheel-dir dist .
+          python scripts/package_extension.py \
+            --source extension \
+            --output dist/agentmesh-officialrecruitment-extension.zip \
+            --production
+
+      - name: 拒绝私有服务端路径
+        run: |
+          test ! -e migrations
+          test ! -e web/src
+          test ! -e src/official_recruitment_agent/workbench/api.py
+          test ! -e src/official_recruitment_agent/workbench/service.py

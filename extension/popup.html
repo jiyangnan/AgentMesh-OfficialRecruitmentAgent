@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>官网申请填写器</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="mark">AM</span>
+      <span>
+        <strong>官网申请填写器</strong>
+        <small id="connection">尚未连接 AgentMesh360</small>
+      </span>
+      <button id="disconnect" class="header-button" type="button" hidden>
+        断开
+      </button>
+    </header>
+    <main>
+      <section id="setup">
+        <form id="connection-form">
+          <label>
+            <span>工作台地址</span>
+            <input
+              id="server-url"
+              type="url"
+              value="https://recruit.agentmesh360.com"
+              autocomplete="url"
+              required
+            />
+          </label>
+          <label>
+            <span>AgentMesh360 API Key</span>
+            <input
+              id="api-key"
+              type="password"
+              placeholder="与本机 Agent 使用同一个 Key"
+              autocomplete="off"
+              required
+            />
+          </label>
+          <button class="primary" type="submit">连接三端工作区</button>
+        </form>
+        <p class="setup-note">
+          只需连接一次。扩展、Agent 与 Web 将使用同一账户和个人档案。
+        </p>
+      </section>
+      <section id="assist" hidden>
+        <form id="task-form">
+          <button id="observe" class="primary" type="submit">
+            识别当前步骤
+          </button>
+        </form>
+      </section>
+      <section id="review" hidden>
+        <div class="summary">
+          <span>
+            <small id="step-label">当前步骤</small>
+            <strong id="target-origin"></strong>
+          </span>
+          <span class="count" id="field-count">0</span>
+        </div>
+        <div id="field-list" class="field-list"></div>
+        <p class="boundary">
+          附件、验证码、声明、下一步和最终提交保持手动。
+        </p>
+        <div class="actions">
+          <button id="undo" class="secondary" type="button" disabled>
+            撤销本次填写
+          </button>
+          <button id="execute" class="primary" type="button" disabled>
+            确认填写
+          </button>
+        </div>
+      </section>
+      <p id="message" class="message" hidden></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

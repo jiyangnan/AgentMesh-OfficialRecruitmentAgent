@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "AgentMesh360 官网申请填写器",
+  "version": "0.4.0",
+  "description": "连接 Agent、Chrome 与 Web，识别并辅助填写当前官网招聘页面",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*",
+    "https://agentmesh360.com/*",
+    "https://*.agentmesh360.com/*"
+  ],
+  "action": {
+    "default_title": "官网申请填写器",
+    "default_popup": "popup.html"
+  }
+}

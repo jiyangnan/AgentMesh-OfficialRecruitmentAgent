@@ -1,0 +1,267 @@
+:root {
+  font-family:
+    Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: #17201e;
+  background: #f4f6f3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 360px;
+  margin: 0;
+}
+
+header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  color: #fff;
+  background: #183f37;
+}
+
+header > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+header > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.header-button {
+  min-height: 28px;
+  padding: 0 7px;
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 9px;
+}
+
+header strong {
+  font-size: 13px;
+}
+
+header small {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 10px;
+}
+
+.mark {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8782b;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+main {
+  padding: 15px;
+}
+
+form,
+label {
+  display: flex;
+  flex-direction: column;
+}
+
+form {
+  gap: 12px;
+}
+
+.setup-note {
+  margin: 10px 0 0;
+  color: #61706b;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+#assist form {
+  display: block;
+}
+
+#assist button {
+  width: 100%;
+}
+
+label {
+  gap: 6px;
+  color: #61706b;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  min-height: 38px;
+  padding: 8px 10px;
+  color: #17201e;
+  background: #fff;
+  border: 1px solid #bdc8c2;
+  border-radius: 5px;
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.primary {
+  color: #fff;
+  background: #183f37;
+  border: 1px solid #183f37;
+}
+
+.secondary {
+  color: #17201e;
+  background: #fff;
+  border: 1px solid #bdc8c2;
+}
+
+#review {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #d9dfdb;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary small {
+  color: #61706b;
+  font-size: 9px;
+}
+
+.summary strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  min-width: 28px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #23658f;
+  background: #e8f2f8;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.field-list {
+  max-height: 190px;
+  margin-top: 12px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d9dfdb;
+  border-radius: 6px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 0.8fr);
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #d9dfdb;
+}
+
+.field-row:last-child {
+  border-bottom: 0;
+}
+
+.field-row span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.field-row strong,
+.field-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-row strong {
+  font-size: 10px;
+}
+
+.field-row small {
+  color: #61706b;
+  font-size: 9px;
+}
+
+.field-row > code {
+  align-self: center;
+  overflow: hidden;
+  color: #23658f;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boundary {
+  margin: 11px 0;
+  color: #986514;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.message {
+  margin: 13px 0 0;
+  padding: 9px 10px;
+  color: #23658f;
+  background: #e8f2f8;
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.message.error {
+  color: #b33a3a;
+  background: #faeaea;
+}
