@@ -73,7 +73,7 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
     assert "Agent 已安装" not in installer
     assert (
         'WHEEL="$WORK_DIR/'
-        'official_recruitment_agent-0.1.0-py3-none-any.whl"'
+        'official_recruitment_agent-0.1.1-py3-none-any.whl"'
         in installer
     )
     assert '"$VENV/bin/python" -m pip install' in installer

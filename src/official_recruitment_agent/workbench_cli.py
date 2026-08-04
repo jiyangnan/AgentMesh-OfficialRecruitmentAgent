@@ -653,29 +653,37 @@ def _profile_schema() -> dict[str, Any]:
 def _local_handoff_service(
     args: argparse.Namespace,
 ) -> LocalHandoffService:
+    product, workspace_ref = _product_and_workspace(args)
+    return LocalHandoffService(
+        store=LocalProfileStore(default_local_profile_path()),
+        product=product,
+        configured_workspace_ref=workspace_ref,
+    )
+
+
+def _product_and_workspace(
+    args: argparse.Namespace,
+) -> tuple[ProductClient, str]:
     if not args.api_key:
         raise ValueError(
             "本机 Agent 交接需要已配置的 AgentMesh360 API Key。"
         )
-    return LocalHandoffService(
-        store=LocalProfileStore(default_local_profile_path()),
-        product=ProductClient(
-            base_url=args.base_url.rstrip("/"),
-            api_key=args.api_key,
-            account_ref=args.account,
-            actor_id=args.actor,
-        ),
+    product = ProductClient(
+        base_url=args.base_url.rstrip("/"),
+        api_key=args.api_key,
+        account_ref=args.account,
+        actor_id=args.actor,
     )
-
-
-def _profile_handoff_status(
-    args: argparse.Namespace,
-) -> dict[str, Any]:
-    service = _local_handoff_service(args)
-    access = service.product.access()
-    workspace_ref = access.get("workspace_ref")
-    if not isinstance(workspace_ref, str):
+    workspace_ref = product.access().get("workspace_ref")
+    if not _valid_workspace_ref(workspace_ref):
         raise ValueError("工作台没有返回有效的本机工作区编号。")
+    return product, workspace_ref
+
+
+def _query_local_handoff(
+    args: argparse.Namespace,
+    workspace_ref: str,
+) -> dict[str, Any]:
     request = Request(
         f"{LOCAL_HANDOFF_URL}/v1/status?workspace_ref={quote(workspace_ref)}",
         headers={
@@ -695,11 +703,19 @@ def _profile_handoff_status(
     return payload
 
 
+def _profile_handoff_status(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    _, workspace_ref = _product_and_workspace(args)
+    return _query_local_handoff(args, workspace_ref)
+
+
 def _start_profile_handoff(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    _, workspace_ref = _product_and_workspace(args)
     try:
-        current = _profile_handoff_status(args)
+        current = _query_local_handoff(args, workspace_ref)
         return {**current, "started": False, "already_running": True}
     except (HTTPError, URLError, OSError, ValueError):
         pass
@@ -723,12 +739,15 @@ def _start_profile_handoff(
             close_fds=True,
         )
     log_path.chmod(0o600)
-    for _ in range(30):
+    # The child validates the production account before binding its loopback
+    # port. Give a slow but healthy network enough time, while keeping each
+    # readiness probe local and fast.
+    for _ in range(150):
         if process.poll() is not None:
             break
         time.sleep(0.1)
         try:
-            status = _profile_handoff_status(args)
+            status = _query_local_handoff(args, workspace_ref)
             return {
                 **status,
                 "started": True,

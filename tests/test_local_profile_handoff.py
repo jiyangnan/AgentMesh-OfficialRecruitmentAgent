@@ -130,8 +130,26 @@ def _service(tmp_path: Path) -> tuple[LocalHandoffService, FakeProductClient]:
     service = LocalHandoffService(
         store=LocalProfileStore(tmp_path / "private-profile.sqlite3"),
         product=product,  # type: ignore[arg-type]
+        configured_workspace_ref=WORKSPACE_REF,
     )
     return service, product
+
+
+def test_status_uses_startup_workspace_without_cloud_request(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+
+    ready = service.status(WORKSPACE_REF)
+    mismatch = service.status(
+        "ws_ffffffffffffffffffffffffffffffff"
+    )
+
+    assert ready["status"] == "ready"
+    assert ready["workspace_match"] is True
+    assert mismatch["status"] == "workspace_mismatch"
+    assert mismatch["workspace_match"] is False
+    assert product.calls == []
 
 
 def test_private_answer_stays_local_and_extension_receives_confirmed_value(

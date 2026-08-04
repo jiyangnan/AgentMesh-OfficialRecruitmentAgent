@@ -143,6 +143,71 @@ def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
     assert payload["answer_residency"] == "local_device"
 
 
+def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls = {"cloud": 0, "local": 0, "spawn": 0}
+    workspace_ref = _test_workspace_ref("a")
+
+    def fake_product_and_workspace(_args):
+        calls["cloud"] += 1
+        return object(), workspace_ref
+
+    def fake_query(_args, queried_workspace_ref):
+        calls["local"] += 1
+        assert queried_workspace_ref == workspace_ref
+        if calls["local"] == 1:
+            raise cli_module.URLError("service not running")
+        return {
+            "status": "ready",
+            "workspace_match": True,
+            "answer_residency": "local_device",
+        }
+
+    class FakeProcess:
+        pid = 43210
+
+        @staticmethod
+        def poll():
+            return None
+
+    def fake_popen(*_args, **_kwargs):
+        calls["spawn"] += 1
+        return FakeProcess()
+
+    monkeypatch.setattr(
+        cli_module,
+        "_product_and_workspace",
+        fake_product_and_workspace,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_query_local_handoff",
+        fake_query,
+    )
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        cli_module,
+        "_config_path",
+        lambda: tmp_path / "official-recruitment.json",
+    )
+    args = cli_module.argparse.Namespace(
+        base_url="https://recruit.agentmesh360.com",
+        api_key="agentmesh_live_test-key",
+        account=None,
+        actor=None,
+    )
+
+    result = cli_module._start_profile_handoff(args)
+
+    assert result["status"] == "ready"
+    assert result["started"] is True
+    assert result["pid"] == 43210
+    assert calls == {"cloud": 1, "local": 2, "spawn": 1}
+
+
 def test_agent_proposes_structured_profile_without_uploading_resume(
     monkeypatch,
     capsys,
