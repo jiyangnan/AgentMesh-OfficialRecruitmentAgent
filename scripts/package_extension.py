@@ -10,6 +10,8 @@ ARCHIVE_TIMESTAMP = (2026, 1, 1, 0, 0, 0)
 LOCAL_DEVELOPMENT_HOST_PERMISSIONS = {
     "http://127.0.0.1:8000/*",
     "http://localhost:8000/*",
+    "http://127.0.0.1:8010/*",
+    "http://localhost:8010/*",
 }
 
 

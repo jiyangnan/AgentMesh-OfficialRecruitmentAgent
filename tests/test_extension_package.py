@@ -30,7 +30,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
     )
     summary = json.loads(completed.stdout)
 
-    assert summary["version"] == "0.4.0"
+    assert summary["version"] == "0.6.0"
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
@@ -50,6 +50,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
         "storage",
     ]
     assert manifest["host_permissions"] == [
+        "http://127.0.0.1:8765/*",
         "https://agentmesh360.com/*",
         "https://*.agentmesh360.com/*",
     ]

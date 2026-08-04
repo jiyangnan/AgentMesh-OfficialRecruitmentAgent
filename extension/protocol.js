@@ -24,7 +24,7 @@ export function normalizeServerUrl(value) {
   const localDevelopment =
     url.protocol === "http:" &&
     ["127.0.0.1", "localhost"].includes(url.hostname) &&
-    url.port === "8000";
+    ["8000", "8010"].includes(url.port);
   const production =
     url.protocol === "https:" &&
     (url.hostname === "agentmesh360.com" ||
@@ -32,7 +32,7 @@ export function normalizeServerUrl(value) {
     (url.port === "" || url.port === "443");
   if (!localDevelopment && !production) {
     throw new Error(
-      "只允许连接 AgentMesh360 官方工作台或本机 8000 端口。",
+      "只允许连接 AgentMesh360 官方工作台或本机 8000/8010 开发端口。",
     );
   }
   url.pathname = "";
@@ -53,6 +53,7 @@ export async function assistSessionIdempotencyKey(
   pageUrl,
   installationId,
   timeBucket = Math.floor(Date.now() / 300000),
+  refreshFromTaskId = null,
 ) {
   const url = new URL(pageUrl);
   url.hash = "";
@@ -61,6 +62,9 @@ export async function assistSessionIdempotencyKey(
       installation_id: installationId,
       page_url: url.toString(),
       time_bucket: timeBucket,
+      ...(refreshFromTaskId
+        ? { refresh_from_task_id: refreshFromTaskId }
+        : {}),
     }),
   );
   return `assist-${digest}`;
@@ -115,7 +119,14 @@ export function validateFillTask(task, currentUrl) {
   if (!Array.isArray(task.plan?.fields)) {
     throw new Error("填写任务没有可执行字段。");
   }
-  if (task.status !== "manual_only" && task.plan.fields.length === 0) {
+  const pendingRepeatGroups = (task.plan.repeat_groups || []).some(
+    (item) => Number(item.pending_count) > 0,
+  );
+  if (
+    task.status !== "manual_only" &&
+    task.plan.fields.length === 0 &&
+    !pendingRepeatGroups
+  ) {
     throw new Error("填写任务没有可执行字段。");
   }
   return task;
@@ -151,6 +162,93 @@ export function validateFillSession(task, currentUrl) {
   return task;
 }
 
+export function mergeLocalProfileResolution(task, resolution) {
+  if (
+    !resolution ||
+    resolution.contract_version !== "local-profile-resolution-v1" ||
+    resolution.fill_task_id !== task.fill_task_id ||
+    !Array.isArray(resolution.resolved_question_ids) ||
+    !Array.isArray(resolution.fields)
+  ) {
+    throw new Error("本机 Agent 返回的资料补充格式无效。");
+  }
+  const questions = Array.isArray(task.plan?.profile_questions)
+    ? task.plan.profile_questions
+    : [];
+  const allowedBindings = new Map();
+  questions.forEach((question) => {
+    (question.bindings || []).forEach((binding) => {
+      if (
+        typeof binding?.field_signature === "string" &&
+        typeof binding?.selector === "string" &&
+        typeof binding?.control_type === "string"
+      ) {
+        allowedBindings.set(binding.field_signature, {
+          question_id: question.question_id,
+          selector: binding.selector,
+          control_type: binding.control_type,
+        });
+      }
+    });
+  });
+  const resolvedIds = new Set(resolution.resolved_question_ids);
+  const localFields = resolution.fields.map((field) => {
+    const binding = allowedBindings.get(field?.field_signature);
+    if (
+      !binding ||
+      !resolvedIds.has(binding.question_id) ||
+      field.question_id !== binding.question_id ||
+      field.selector !== binding.selector ||
+      field.control_type !== binding.control_type ||
+      field.source !== "local_confirmed_profile_fact" ||
+      typeof field.value !== "string" ||
+      field.value.length > 4000
+    ) {
+      throw new Error("本机 Agent 返回了当前任务范围之外的资料字段。");
+    }
+    return { ...field };
+  });
+  const localBySignature = new Map(
+    localFields.map((field) => [field.field_signature, field]),
+  );
+  const existingFields = (task.plan.fields || []).filter(
+    (field) => !localBySignature.has(field.field_signature),
+  );
+  const reviewFields = (task.plan.review_fields || []).map((field) => {
+    const local = localBySignature.get(field.field_signature);
+    return local
+      ? {
+          ...field,
+          action: "fill",
+          profile_field: local.profile_field,
+          reason: local.reason,
+          value: local.value,
+          display_value: local.display_value,
+        }
+      : field;
+  });
+  const merged = {
+    ...task,
+    status:
+      task.status === "manual_only" && localFields.length
+        ? "ready"
+        : task.status,
+    plan: {
+      ...task.plan,
+      fields: [...existingFields, ...localFields],
+      review_fields: reviewFields,
+      profile_questions: questions.filter(
+        (question) => !resolvedIds.has(question.question_id),
+      ),
+      local_profile_resolution: {
+        resolved_question_ids: [...resolvedIds],
+        field_count: localFields.length,
+      },
+    },
+  };
+  return validateFillTask(merged, task.form_url);
+}
+
 export function validateFillIntent(task, currentUrl) {
   if (!task || typeof task !== "object") {
     throw new Error("填写任务格式无效。");
@@ -183,10 +281,15 @@ export function evidencePayload(result) {
   };
 }
 
-export async function evidenceIdempotencyKey(taskId, result) {
+export async function evidenceIdempotencyKey(
+  taskId,
+  result,
+  taskVersion = null,
+) {
   const digest = await sha256(
     stableStringify({
       task_id: taskId,
+      task_version: taskVersion,
       evidence: evidencePayload(result),
     }),
   );

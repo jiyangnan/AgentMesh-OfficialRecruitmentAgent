@@ -8,7 +8,18 @@ import official_recruitment_agent.workbench_cli as cli_module
 import pytest
 
 
+def _test_workspace_ref(character: str) -> str:
+    return f"ws_{character * 32}"
+
+
 class _Response:
+    def __init__(self, payload: object | None = None) -> None:
+        self.payload = (
+            {"counts": {"sources": 0}}
+            if payload is None
+            else payload
+        )
+
     def __enter__(self):
         return self
 
@@ -16,7 +27,7 @@ class _Response:
         return None
 
     def read(self) -> bytes:
-        return json.dumps({"counts": {"sources": 0}}).encode("utf-8")
+        return json.dumps(self.payload).encode("utf-8")
 
 
 def test_production_cli_sends_universal_key_without_spoofable_surface(
@@ -77,6 +88,15 @@ def test_profile_schema_describes_resume_extraction_contract(capsys) -> None:
     assert "school_city" in (
         payload["fields"]["education_records"]["optional"]
     )
+    assert "work" in payload["fields"]["experience_records"]["kind"]
+    assert "proficiency" in (
+        payload["fields"]["skill_records"]["optional"]
+    )
+    assert payload["fields"]["supplemental_facts"]["scope"] == [
+        "account",
+        "site",
+        "application",
+    ]
     assert any("不上传原始文件" in item for item in payload["instructions"])
 
 
@@ -88,6 +108,39 @@ def test_cli_help_identifies_adapter_instead_of_installed_agent(capsys) -> None:
     output = capsys.readouterr().out
     assert "CLI 适配器" in output
     assert "本机 Agent CLI" not in output
+
+
+def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+
+    def fake_start(args):
+        calls.append(args.profile_handoff_command)
+        return {
+            "status": "ready",
+            "workspace_match": True,
+            "answer_residency": "local_device",
+            "started": True,
+        }
+
+    monkeypatch.setattr(cli_module, "_start_profile_handoff", fake_start)
+
+    code = cli_module.main(
+        [
+            "--api-key",
+            "agentmesh_live_test-key",
+            "profile-handoff",
+            "start",
+        ]
+    )
+
+    assert code == 0
+    assert calls == ["start"]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ready"
+    assert payload["answer_residency"] == "local_device"
 
 
 def test_agent_proposes_structured_profile_without_uploading_resume(
@@ -148,6 +201,7 @@ def test_agent_proposes_structured_profile_without_uploading_resume(
     assert payload["target_id"] == "profile-current"
     assert payload["action_type"] == "create_profile_version"
     assert payload["expected_version"] == 2
+    assert payload["expires_in_seconds"] == 7 * 24 * 60 * 60
     imported = payload["payload"]["fields"]
     assert imported["school_city"] == "深圳"
     assert imported["_source_document"] == {
@@ -160,6 +214,75 @@ def test_agent_proposes_structured_profile_without_uploading_resume(
     serialized = request.data.decode("utf-8")
     assert str(resume) not in serialized
     assert "private resume bytes" not in serialized
+
+
+def test_agent_reads_questions_for_a_specific_fill_task(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _Response(
+            {
+                "question_count": 1,
+                "questions": [
+                    {
+                        "question_id": "pq_" + "a" * 24,
+                        "site_label": "出生日期",
+                    }
+                ],
+                "agent_gate": {
+                    "state": "questions_required",
+                    "blocking": True,
+                    "must_present_questions": True,
+                },
+                "interaction": {
+                    "event": "interaction_required",
+                    "protocol": "agentmesh360.interaction_required",
+                    "preferred_presentation": "card",
+                    "fallback_text": "请补充出生日期。",
+                },
+                "host_presentations": {
+                    "preferred": "native_card",
+                },
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.example",
+            "--api-key",
+            "agentmesh_live_test-key",
+            "profile-questions",
+            "--fill-task-id",
+            "fill_0123456789abcdef01234567",
+        ]
+    )
+
+    assert code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["agent_gate"]["blocking"] is True
+    assert output["agent_gate"]["must_present_questions"] is True
+    assert output["questions"][0]["site_label"] == "出生日期"
+    assert output["interaction"]["preferred_presentation"] == "card"
+    assert output["host_presentations"]["preferred"] == "native_card"
+    request, _ = requests[0]
+    assert request.method == "GET"
+    assert request.full_url.endswith(
+        "/api/v1/agent/profile-questions?"
+        "fill_task_id=fill_0123456789abcdef01234567"
+    )
+
+
+def test_cli_does_not_offer_cloud_profile_answer_submission() -> None:
+    parser = cli_module.build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["propose-profile-completion"])
 
 
 def test_configure_persists_key_with_private_permissions_without_printing_it(
@@ -207,6 +330,8 @@ def test_doctor_uses_saved_account_and_reports_profile_readiness(
         encoding="utf-8",
     )
     monkeypatch.setenv("ORA_CONFIG_PATH", str(config_path))
+    continuity_path = tmp_path / "continuity.json"
+    monkeypatch.setenv("ORA_CONTINUITY_PATH", str(continuity_path))
     requests = []
 
     class DoctorResponse:
@@ -224,6 +349,15 @@ def test_doctor_uses_saved_account_and_reports_profile_readiness(
 
     def fake_urlopen(request, timeout):
         requests.append(request)
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return DoctorResponse(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("a"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
         if request.full_url.endswith("/api/v1/profiles"):
             return DoctorResponse(
                 [
@@ -244,9 +378,252 @@ def test_doctor_uses_saved_account_and_reports_profile_readiness(
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ready"
+    assert payload["continuity_status"] == "healthy"
+    assert payload["recovery_required"] is False
     assert payload["current_profile"]["version_number"] == 3
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert all(
         request.headers["Authorization"].startswith("Bearer ")
         for request in requests
     )
+    marker_text = continuity_path.read_text(encoding="utf-8")
+    marker = json.loads(marker_text)
+    assert continuity_path.stat().st_mode & 0o777 == 0o600
+    assert marker["schema_version"] == 1
+    assert marker["workspaces"][_test_workspace_ref("a")][
+        "confirmed_profile_seen"
+    ] is True
+    assert len(
+        marker["workspaces"][_test_workspace_ref("a")][
+            "profile_fingerprint"
+        ]
+    ) == 64
+    assert set(marker["workspaces"][_test_workspace_ref("a")]) == {
+        "confirmed_profile_seen",
+        "profile_fingerprint",
+    }
+    assert "agentmesh_live_0123456789abcdef" not in marker_text
+    assert "profile-current" not in marker_text
+    assert "标准简历" not in marker_text
+
+
+def test_doctor_reports_uninitialized_for_genuine_first_use(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    continuity_path = tmp_path / "continuity.json"
+    monkeypatch.setenv("ORA_CONTINUITY_PATH", str(continuity_path))
+    monkeypatch.setenv("AGENTMESH_API_KEY", "agentmesh_live_test")
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return _Response(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("b"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
+        if request.full_url.endswith("/api/v1/profiles"):
+            return _Response([])
+        return _Response({"counts": {}})
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+
+    code = cli_module.main(["doctor"])
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "needs_profile"
+    assert payload["continuity_status"] == "uninitialized"
+    assert payload["recovery_required"] is False
+    assert payload["interaction_required"] is None
+    assert not continuity_path.exists()
+
+
+def test_doctor_detects_profile_loss_after_database_is_recreated_empty(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    continuity_path = tmp_path / "continuity.json"
+    monkeypatch.setenv("ORA_CONTINUITY_PATH", str(continuity_path))
+    monkeypatch.setenv("AGENTMESH_API_KEY", "agentmesh_live_test")
+    profile_present = True
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return _Response(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("c"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
+        if request.full_url.endswith("/api/v1/profiles"):
+            if profile_present:
+                return _Response(
+                    [
+                        {
+                            "profile_version_id": "profile-before-loss",
+                            "version_number": 2,
+                            "label": "已确认档案",
+                            "is_current": True,
+                        }
+                    ]
+                )
+            return _Response([])
+        return _Response({"counts": {}})
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+
+    assert cli_module.main(["doctor"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ready"
+    profile_present = False
+
+    assert cli_module.main(["doctor"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "workspace_recovery_required"
+    assert payload["continuity_status"] == "profile_missing"
+    assert payload["recovery_required"] is True
+    assert payload["interaction_required"]["kind"] == (
+        "resume_reselection"
+    )
+    assert "重新选择" in payload["interaction_required"]["prompt"]
+    assert "停止辅助填写" in payload["next_action"]
+
+
+def test_doctor_continuity_survives_api_key_rotation(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(
+        "ORA_CONTINUITY_PATH",
+        str(tmp_path / "continuity.json"),
+    )
+    profile_present = True
+    authorizations = []
+
+    def fake_urlopen(request, timeout):
+        authorizations.append(request.headers.get("Authorization"))
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return _Response(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("d"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
+        if request.full_url.endswith("/api/v1/profiles"):
+            return _Response(
+                [
+                    {
+                        "profile_version_id": "profile-v1",
+                        "version_number": 1,
+                        "label": "档案",
+                        "is_current": True,
+                    }
+                ]
+                if profile_present
+                else []
+            )
+        return _Response({"counts": {}})
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+
+    assert cli_module.main(
+        ["--api-key", "agentmesh_live_old", "doctor"]
+    ) == 0
+    capsys.readouterr()
+    profile_present = False
+    assert cli_module.main(
+        ["--api-key", "agentmesh_live_new", "doctor"]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["status"] == "workspace_recovery_required"
+    assert authorizations[-1] == "Bearer agentmesh_live_new"
+
+
+def test_doctor_does_not_apply_another_accounts_continuity_marker(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    continuity_path = tmp_path / "continuity.json"
+    continuity_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "workspaces": {
+                    _test_workspace_ref("e"): {
+                        "confirmed_profile_seen": True,
+                        "profile_fingerprint": "a" * 64,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ORA_CONTINUITY_PATH", str(continuity_path))
+    monkeypatch.setenv("AGENTMESH_API_KEY", "agentmesh_live_test")
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return _Response(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("f"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
+        if request.full_url.endswith("/api/v1/profiles"):
+            return _Response([])
+        return _Response({"counts": {}})
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+
+    assert cli_module.main(["doctor"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "needs_profile"
+    assert payload["continuity_status"] == "uninitialized"
+
+
+def test_doctor_fails_closed_when_continuity_marker_is_corrupt(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    continuity_path = tmp_path / "continuity.json"
+    continuity_path.write_text("not-json", encoding="utf-8")
+    monkeypatch.setenv("ORA_CONTINUITY_PATH", str(continuity_path))
+    monkeypatch.setenv("AGENTMESH_API_KEY", "agentmesh_live_test")
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/v1/workbench/access"):
+            return _Response(
+                {
+                    "access": "granted",
+                    "workspace_ref": _test_workspace_ref("0"),
+                    "profile_data_residency": "local_device",
+                    "profile_input_enabled": True,
+                }
+            )
+        if request.full_url.endswith("/api/v1/profiles"):
+            return _Response([])
+        return _Response({"counts": {}})
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+
+    assert cli_module.main(["doctor"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "workspace_recovery_required"
+    assert payload["continuity_status"] == "continuity_check_failed"
+    assert payload["recovery_required"] is True
+    assert continuity_path.read_text(encoding="utf-8") == "not-json"

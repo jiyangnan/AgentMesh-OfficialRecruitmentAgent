@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.1.0
+version: 0.3.0
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -18,9 +18,12 @@ AI Agent.
   service. Never describe it as an Agent.
 - The Chrome extension handles only the recruitment page and visible step that
   the user has already opened.
-- The Web workbench stores sources, opportunities, applications, profile
-  versions, evidence and long-term status.
-- The private product service and database are authoritative for durable state.
+- The Web workbench stores sources, opportunities, applications, evidence and
+  long-term status. Missing-field answers entered in Web go directly to the
+  user's local Agent and are not stored by the product service.
+- The local private profile store is authoritative for user-confirmed missing
+  field answers. The product service remains authoritative for shared product
+  state that contains no such answer values.
 
 ## First Use
 
@@ -38,6 +41,29 @@ AI Agent.
 5. If no confirmed profile exists, ask the user to explicitly select a standard
    resume and follow the profile workflow below.
 6. When `doctor` reports `ready`, continue the user's requested task.
+7. Run `ora-workbench profile-handoff start`. This command is idempotent: if
+   the local handoff is already running it only verifies the current account.
+   Run it yourself; do not ask the user to open a terminal or keep a process
+   running. Continue only when it reports `status: ready` and
+   `workspace_match: true`.
+
+### Local Profile Recovery
+
+`ora-workbench doctor` distinguishes a genuine first use from a local profile
+database that has disappeared. Always obey this gate before inspecting or
+filling a recruitment form.
+
+- If `status` is `workspace_recovery_required`, stop all form filling and
+  application actions. Present `interaction_required` and ask the user to
+  explicitly reselect their standard resume.
+- Rebuild the profile only through the normal `profile-schema` and
+  `propose-profile-import` review flow. Run `doctor` again after Web confirms
+  the proposal; continue only after it returns `ready`.
+- Never claim that you remember the raw resume, never search the user's device
+  for it, and never silently choose a likely file. The continuity marker stores
+  no resume content, local path, filename, profile fields or API Key.
+- If `continuity_status` is `continuity_check_failed`, use the same explicit
+  resume-reselection recovery. Do not overwrite or bypass the warning yourself.
 
 ## Standard Resume To Profile
 
@@ -78,10 +104,69 @@ After a confirmed profile exists:
 2. The user opens and logs in to a recruitment website themselves.
 3. The user clicks the extension to inspect the current visible step.
 4. The extension previews mappings before filling reversible ordinary fields.
-5. The user handles files, declarations, CAPTCHA, next-step navigation and
+5. After every inspection or fill, run `ora-workbench profile-questions`
+   before reporting the current step complete or directing the user onward.
+6. The user handles files, declarations, CAPTCHA, next-step navigation and
    final submission.
-6. The extension writes bounded evidence back to the same application shown in
+7. The extension writes bounded evidence back to the same application shown in
    Web.
+
+### Mandatory Agent Gate
+
+The profile-question check is a completion gate, not an optional diagnostic.
+Run it after every extension inspection or fill, including when the extension
+successfully filled some fields. When the user says that a page or login is
+ready, first complete the agreed extension inspection and then run the gate.
+
+- If `agent_gate.blocking` is `true`, the current form step is incomplete.
+- If `agent_gate.must_present_questions` is `true`, present every question in
+  one compact batch in the same response and wait for the user's answers.
+- When `interaction.preferred_presentation` is `card`, use the host's native
+  card or form only when the corresponding adapter is supported and callable
+  in the current surface and mode. Preserve the declared groups, field labels,
+  privacy markers and interaction ID.
+- If the native interface is unavailable, relay `interaction.fallback_text`
+  unchanged. Do not silently flatten a card-capable interaction and do not
+  claim that the host has no card capability merely because the current mode
+  does not expose it.
+- Never say that the step is complete and never direct the user to the site's
+  next step while the gate is blocking.
+- Only continue the ordinary handoff after the command returns
+  `agent_gate.blocking: false`.
+
+### Complete Unknown Recruitment Fields
+
+Do not stop merely because the extension filled the fields already present in
+the confirmed profile. When the extension reports profile gaps:
+
+1. Run `ora-workbench profile-questions` immediately. Use
+   `--fill-task-id <id>` when the extension or user provides a task ID.
+2. Present every returned question in one compact batch. Do not interrupt the
+   user once per field and do not invent missing answers.
+3. Exclude files, CAPTCHA, declarations, search/filter controls, next-step
+   actions and submission from profile completion even if the website uses
+   unusual wording.
+4. Choose the narrowest truthful scope for each answer:
+   - `account` for a stable personal fact reusable everywhere;
+   - `site` for one recruitment website's wording or option format;
+   - `application` for a position-specific preference or one-time answer.
+5. Make sure `ora-workbench profile-handoff start` reports ready, then open the
+   matching missing-information card in the Web workbench. The user may fill
+   the card there; its browser draft stays local and submission goes directly
+   to this local handoff, not to the product answer API.
+6. The Web workbench must show the complete local pending proposal. Do not
+   claim the values are saved until the user confirms “确认并保存到本机”.
+7. After the user confirms locally, tell them to return to the same recruitment page
+   and choose “识别当前步骤” again. Do not ask them to refresh, re-login or
+   navigate away.
+8. The extension must fill only controls that are still empty. Existing site
+   values and user edits stay unchanged; the user reviews everything and keeps
+   control of save, next and submit.
+
+Never send applicant answers to the product API, copy them into project files,
+logs or durable Agent memory, or fall back to a cloud proposal when the local
+handoff is unavailable. Leave the browser draft intact and repair the local
+handoff instead.
 
 You do not need to remain online while the extension fills a page. Do not try
 to replace the extension with browser automation unless the user explicitly

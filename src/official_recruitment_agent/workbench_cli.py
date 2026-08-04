@@ -4,20 +4,33 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from official_recruitment_agent.workbench.profile_contract import (
+    PROFILE_IMPORT_PROPOSAL_TTL_SECONDS,
     PROFILE_SCHEMA_VERSION,
     normalize_profile_fields,
+)
+from official_recruitment_agent.local_profile_handoff import (
+    LOCAL_HANDOFF_URL,
+    LocalHandoffService,
+    LocalProfileStore,
+    ProductClient,
+    default_local_profile_path,
+    serve_local_handoff,
 )
 
 
 DEFAULT_BASE_URL = "https://recruit.agentmesh360.com"
+CONTINUITY_SCHEMA_VERSION = 1
 
 
 def _config_path() -> Path:
@@ -40,6 +53,215 @@ def _load_config() -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Agent 本机配置必须是 JSON 对象。")
     return payload
+
+
+def _continuity_path() -> Path:
+    override = os.getenv("ORA_CONTINUITY_PATH")
+    if override:
+        return Path(override).expanduser()
+    return _config_path().with_name(
+        "official-recruitment-continuity.json"
+    )
+
+
+def _empty_continuity_state() -> dict[str, Any]:
+    return {
+        "schema_version": CONTINUITY_SCHEMA_VERSION,
+        "workspaces": {},
+    }
+
+
+def _load_continuity_state() -> tuple[dict[str, Any] | None, str | None]:
+    path = _continuity_path()
+    if not path.exists():
+        return _empty_continuity_state(), None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("root_not_object")
+        if set(payload) != {"schema_version", "workspaces"}:
+            raise ValueError("unexpected_root_fields")
+        if payload.get("schema_version") != CONTINUITY_SCHEMA_VERSION:
+            raise ValueError("unsupported_schema")
+        workspaces = payload.get("workspaces")
+        if not isinstance(workspaces, dict):
+            raise ValueError("workspaces_not_object")
+        for workspace_ref, entry in workspaces.items():
+            if not _valid_workspace_ref(workspace_ref):
+                raise ValueError("invalid_workspace_ref")
+            if not isinstance(entry, dict):
+                raise ValueError("invalid_workspace_entry")
+            if set(entry) != {
+                "confirmed_profile_seen",
+                "profile_fingerprint",
+            }:
+                raise ValueError("unexpected_workspace_fields")
+            if entry.get("confirmed_profile_seen") is not True:
+                raise ValueError("invalid_profile_state")
+            fingerprint = entry.get("profile_fingerprint")
+            if not _valid_sha256(fingerprint):
+                raise ValueError("invalid_profile_fingerprint")
+        return payload, None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None, "continuity_marker_unreadable"
+
+
+def _valid_workspace_ref(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith("ws_"):
+        return False
+    suffix = value[3:]
+    return len(suffix) == 32 and all(
+        character in "0123456789abcdef" for character in suffix
+    )
+
+
+def _valid_sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
+def _profile_fingerprint(
+    workspace_ref: str,
+    current_profile: dict[str, Any],
+) -> str:
+    source = (
+        f"{workspace_ref}:"
+        f"{current_profile['profile_version_id']}:"
+        f"{current_profile['version_number']}"
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _write_continuity_state(
+    state: dict[str, Any],
+    *,
+    workspace_ref: str,
+    current_profile: dict[str, Any],
+) -> None:
+    workspaces = state.setdefault("workspaces", {})
+    workspaces[workspace_ref] = {
+        "confirmed_profile_seen": True,
+        "profile_fingerprint": _profile_fingerprint(
+            workspace_ref,
+            current_profile,
+        ),
+    }
+    path = _continuity_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _doctor(args: argparse.Namespace) -> dict[str, Any]:
+    access = _request(args, "GET", "/api/v1/workbench/access")
+    workspace_ref = access.get("workspace_ref")
+    if (
+        not isinstance(workspace_ref, str)
+        or not _valid_workspace_ref(workspace_ref)
+    ):
+        raise ValueError(
+            "工作台没有返回匿名工作区编号，请更新工作台后重试。"
+        )
+    summary = _request(args, "GET", "/api/v1/workbench/summary")
+    profiles = _request(args, "GET", "/api/v1/profiles")
+    if not isinstance(summary, dict) or not isinstance(profiles, list):
+        raise ValueError("工作台返回了无法识别的健康检查数据。")
+    if any(not isinstance(item, dict) for item in profiles):
+        raise ValueError("工作台返回了无法识别的档案列表。")
+    current_profile = next(
+        (item for item in profiles if item.get("is_current") is True),
+        None,
+    )
+    continuity_state, continuity_error = _load_continuity_state()
+
+    if current_profile is not None:
+        repaired = continuity_error is not None
+        _write_continuity_state(
+            continuity_state or _empty_continuity_state(),
+            workspace_ref=workspace_ref,
+            current_profile=current_profile,
+        )
+        status = "ready"
+        continuity_status = (
+            "marker_repaired" if repaired else "healthy"
+        )
+        recovery_required = False
+        interaction_required = None
+        next_action = (
+            "浏览器扩展可直接在当前招聘页面启动辅助填写。"
+        )
+    else:
+        prior_profile_seen = bool(
+            continuity_state
+            and continuity_state.get("workspaces", {})
+            .get(workspace_ref, {})
+            .get("confirmed_profile_seen")
+            is True
+        )
+        if continuity_error is not None or prior_profile_seen:
+            status = "workspace_recovery_required"
+            continuity_status = (
+                "continuity_check_failed"
+                if continuity_error is not None
+                else "profile_missing"
+            )
+            recovery_required = True
+            interaction_required = {
+                "kind": "resume_reselection",
+                "title": "本机资料库需要恢复",
+                "prompt": (
+                    "当前本机资料库中找不到已确认档案。请重新选择"
+                    "你的标准简历；原始简历只在本机读取，不会上传"
+                    "或留存在 AgentMesh360。"
+                ),
+            }
+            next_action = (
+                "停止辅助填写和申请流程，请用户明确重新选择标准简历，"
+                "再按 profile-schema 提交 propose-profile-import 提案。"
+            )
+        else:
+            status = "needs_profile"
+            continuity_status = "uninitialized"
+            recovery_required = False
+            interaction_required = None
+            next_action = (
+                "请用户明确选择标准简历，按 profile-schema 生成字段并"
+                "提交 propose-profile-import 提案。"
+            )
+
+    return {
+        "status": status,
+        "server_url": args.base_url.rstrip("/"),
+        "api_key_configured": bool(args.api_key),
+        "workspace_ref": workspace_ref,
+        "continuity_status": continuity_status,
+        "recovery_required": recovery_required,
+        "interaction_required": interaction_required,
+        "current_profile": (
+            {
+                "profile_version_id": current_profile[
+                    "profile_version_id"
+                ],
+                "version_number": current_profile["version_number"],
+                "label": current_profile["label"],
+            }
+            if current_profile
+            else None
+        ),
+        "counts": summary.get("counts", {}),
+        "next_action": next_action,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,6 +307,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("doctor")
     subparsers.add_parser("extension-setup")
     subparsers.add_parser("profile-schema")
+    handoff = subparsers.add_parser("profile-handoff")
+    handoff_commands = handoff.add_subparsers(
+        dest="profile_handoff_command",
+        required=True,
+    )
+    handoff_commands.add_parser("serve")
+    handoff_commands.add_parser("start")
+    handoff_commands.add_parser("status")
     subparsers.add_parser("summary")
     list_parser = subparsers.add_parser("list")
     list_parser.add_argument(
@@ -133,8 +363,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="宿主 Agent 按 profile-schema 生成的结构化 JSON 文件",
     )
     profile.add_argument("--expected-version", required=True, type=int)
-    profile.add_argument("--expires-in", type=int, default=3600)
+    profile.add_argument(
+        "--expires-in",
+        type=int,
+        default=PROFILE_IMPORT_PROPOSAL_TTL_SECONDS,
+    )
     profile.add_argument("--idempotency-key")
+
+    questions = subparsers.add_parser("profile-questions")
+    questions.add_argument("--fill-task-id")
     return parser
 
 
@@ -144,49 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "configure":
             result = _configure(args)
         elif args.command == "doctor":
-            summary = _request(
-                args,
-                "GET",
-                "/api/v1/workbench/summary",
-            )
-            profiles = _request(args, "GET", "/api/v1/profiles")
-            current_profile = next(
-                (
-                    item
-                    for item in profiles
-                    if item.get("is_current") is True
-                ),
-                None,
-            )
-            result = {
-                "status": (
-                    "ready" if current_profile is not None else "needs_profile"
-                ),
-                "server_url": args.base_url.rstrip("/"),
-                "api_key_configured": bool(args.api_key),
-                "current_profile": (
-                    {
-                        "profile_version_id": current_profile[
-                            "profile_version_id"
-                        ],
-                        "version_number": current_profile[
-                            "version_number"
-                        ],
-                        "label": current_profile["label"],
-                    }
-                    if current_profile
-                    else None
-                ),
-                "counts": summary.get("counts", {}),
-                "next_action": (
-                    "浏览器扩展可直接在当前招聘页面启动辅助填写。"
-                    if current_profile
-                    else (
-                        "读取标准简历，按 profile-schema 生成字段并提交"
-                        " propose-profile-import 提案。"
-                    )
-                ),
-            }
+            result = _doctor(args)
         elif args.command == "extension-setup":
             result = {
                 "server_url": args.base_url.rstrip("/"),
@@ -209,6 +404,28 @@ def main(argv: list[str] | None = None) -> int:
             }
         elif args.command == "profile-schema":
             result = _profile_schema()
+        elif args.command == "profile-handoff":
+            if args.profile_handoff_command == "serve":
+                service = _local_handoff_service(args)
+                print(
+                    json.dumps(
+                        {
+                            "status": "ready",
+                            "local_handoff_url": LOCAL_HANDOFF_URL,
+                            "local_profile_store": str(service.store.path),
+                            "answer_residency": "local_device",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                serve_local_handoff(service)
+                return 0
+            result = (
+                _start_profile_handoff(args)
+                if args.profile_handoff_command == "start"
+                else _profile_handoff_status(args)
+            )
         elif args.command == "summary":
             result = _request(args, "GET", "/api/v1/workbench/summary")
         elif args.command == "list":
@@ -248,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
                     or f"agent-proposal-{uuid4().hex}"
                 ),
             )
-        else:
+        elif args.command == "propose-profile-import":
             fields = _load_profile_fields(Path(args.fields_json))
             fields["_source_document"] = _source_document_metadata(
                 Path(args.document)
@@ -274,6 +491,11 @@ def main(argv: list[str] | None = None) -> int:
                     or f"agent-profile-import-{uuid4().hex}"
                 ),
             )
+        elif args.command == "profile-questions":
+            path = "/api/v1/agent/profile-questions"
+            if args.fill_task_id:
+                path += f"?fill_task_id={quote(args.fill_task_id)}"
+            result = _request(args, "GET", path)
     except (HTTPError, URLError, OSError, ValueError) as error:
         print(
             json.dumps(
@@ -338,6 +560,9 @@ def _profile_schema() -> dict[str, Any]:
             "只提取文档中有明确依据的字段，不推断缺失信息。",
             "多段教育经历必须保留在 education_records；只有一段时可自动标记为主教育经历。",
             "多段教育经历无法确认主记录时，不设置 is_primary，交给用户审阅。",
+            "实习、工作、项目、校内职务和活动必须保留在 experience_records，并用 kind 区分。",
+            "同类经历有多条但无法确认主记录时，不设置 is_primary，不擅自选择第一条。",
+            "证书、技能和语言的日期、熟练度、分数或等级应进入对应 records，不要压成无法拆分的文本。",
         ],
         "fields": {
             "identity": [
@@ -349,6 +574,12 @@ def _profile_schema() -> dict[str, Any]:
                 "id_number",
                 "political_status",
                 "ethnicity",
+                "id_type",
+                "household_registration",
+                "native_place",
+                "second_major",
+                "personal_strengths",
+                "height_cm",
             ],
             "education_records": {
                 "required": ["school_name"],
@@ -362,19 +593,153 @@ def _profile_schema() -> dict[str, Any]:
                     "start_date",
                     "graduation_date",
                     "study_mode",
+                    "research_summary",
                     "is_primary",
                 ],
+            },
+            "experience_records": {
+                "required": ["kind"],
+                "kind": [
+                    "internship",
+                    "work",
+                    "project",
+                    "campus_role",
+                    "activity",
+                ],
+                "optional": [
+                    "name",
+                    "organization_name",
+                    "role_title",
+                    "start_date",
+                    "end_date",
+                    "location",
+                    "description",
+                    "level",
+                    "is_primary",
+                ],
+            },
+            "certificate_records": {
+                "required": ["name"],
+                "optional": ["acquired_date", "issuer", "is_primary"],
+            },
+            "skill_records": {
+                "required": ["name"],
+                "optional": ["proficiency", "is_primary"],
+            },
+            "language_records": {
+                "required": ["language"],
+                "optional": ["score", "level", "is_primary"],
             },
             "preferences": [
                 "target_roles",
                 "preferred_locations",
+                "expected_salary",
                 "skills",
                 "certificates",
                 "awards",
                 "language_skills",
             ],
+            "supplemental_facts": {
+                "description": (
+                    "只用于保存用户针对真实报名字段明确回答并在 Web 确认的补充信息"
+                ),
+                "scope": ["account", "site", "application"],
+                "privacy": ["standard", "sensitive"],
+            },
         },
     }
+
+
+def _local_handoff_service(
+    args: argparse.Namespace,
+) -> LocalHandoffService:
+    if not args.api_key:
+        raise ValueError(
+            "本机 Agent 交接需要已配置的 AgentMesh360 API Key。"
+        )
+    return LocalHandoffService(
+        store=LocalProfileStore(default_local_profile_path()),
+        product=ProductClient(
+            base_url=args.base_url.rstrip("/"),
+            api_key=args.api_key,
+            account_ref=args.account,
+            actor_id=args.actor,
+        ),
+    )
+
+
+def _profile_handoff_status(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    service = _local_handoff_service(args)
+    access = service.product.access()
+    workspace_ref = access.get("workspace_ref")
+    if not isinstance(workspace_ref, str):
+        raise ValueError("工作台没有返回有效的本机工作区编号。")
+    request = Request(
+        f"{LOCAL_HANDOFF_URL}/v1/status?workspace_ref={quote(workspace_ref)}",
+        headers={
+            "Accept": "application/json",
+            "Origin": (
+                "https://recruit.agentmesh360.com"
+                if args.base_url.startswith("https://")
+                else "http://127.0.0.1:8010"
+            ),
+        },
+        method="GET",
+    )
+    with urlopen(request, timeout=2) as response:
+        payload = json.loads(response.read())
+    if not isinstance(payload, dict):
+        raise ValueError("本机 Agent 交接服务返回了无效状态。")
+    return payload
+
+
+def _start_profile_handoff(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    try:
+        current = _profile_handoff_status(args)
+        return {**current, "started": False, "already_running": True}
+    except (HTTPError, URLError, OSError, ValueError):
+        pass
+    log_path = _config_path().with_name(
+        "official-recruitment-local-handoff.log"
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as log:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "official_recruitment_agent.workbench_cli",
+                "profile-handoff",
+                "serve",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+            close_fds=True,
+        )
+    log_path.chmod(0o600)
+    for _ in range(30):
+        if process.poll() is not None:
+            break
+        time.sleep(0.1)
+        try:
+            status = _profile_handoff_status(args)
+            return {
+                **status,
+                "started": True,
+                "already_running": False,
+                "pid": process.pid,
+            }
+        except (HTTPError, URLError, OSError, ValueError):
+            continue
+    raise ValueError(
+        f"本机 Agent 资料交接启动失败，请检查 {log_path}。"
+    )
 
 
 def _load_profile_fields(path: Path) -> dict[str, Any]:

@@ -30,17 +30,154 @@
     return value?.replace(/\s+/g, " ").trim() ?? "";
   }
 
-  function labelsFor(element) {
-    const labels = [];
+  function fieldLabel(value) {
+    return text(value)
+      .replace(/^[*＊\s:：]+/, "")
+      .replace(/[*＊\s:：]+$/, "");
+  }
+
+  const REPEAT_GROUP_LABELS = Object.freeze({
+    education: "教育经历",
+    internship: "实习经历",
+    work: "工作经历",
+    project: "项目经历",
+    campus_role: "校内职务",
+    activity: "活动实践",
+    certificate: "证书",
+    skill: "专业技能",
+    language: "语言能力",
+  });
+
+  function repeatGroupForSection(section) {
+    if (!section) return null;
+    const explicit = section.getAttribute("data-ora-repeat-group");
+    const subtitle = section.querySelector(".subtitle");
+    const rawLabel = fieldLabel(
+      subtitle?.textContent || section.getAttribute("aria-label") || "",
+    );
+    const label = rawLabel
+      .replace(/[（(]\s*\d+\s*[）)]/g, "")
+      .split(/保\s*存|删\s*除/)[0]
+      .trim();
+    const group =
+      explicit ||
+      Object.entries(REPEAT_GROUP_LABELS).find(
+        ([, candidate]) => candidate === label,
+      )?.[0];
+    if (!group || !(group in REPEAT_GROUP_LABELS)) return null;
+    const explicitIndex = section.getAttribute("data-ora-repeat-index");
+    const parsedIndex =
+      explicitIndex !== null
+        ? Number.parseInt(explicitIndex, 10)
+        : null;
+    return {
+      group,
+      label: REPEAT_GROUP_LABELS[group],
+      index:
+        Number.isInteger(parsedIndex) && parsedIndex >= 0
+          ? parsedIndex
+          : null,
+    };
+  }
+
+  function repeatContextFor(element) {
+    const section = element.closest(".set_i_div, [data-ora-repeat-group]");
+    const info = repeatGroupForSection(section);
+    if (!info) return null;
+    if (info.index !== null) {
+      return { repeat_group: info.group, repeat_index: info.index };
+    }
+    const matching = Array.from(
+      document.querySelectorAll(".set_i_div, [data-ora-repeat-group]"),
+    ).filter(
+      (candidate) => repeatGroupForSection(candidate)?.group === info.group,
+    );
+    const index = matching.indexOf(section);
+    return index >= 0
+      ? { repeat_group: info.group, repeat_index: index }
+      : null;
+  }
+
+  function precedingTableLabel(element) {
+    const cell = element.closest("td, th");
+    const row = cell?.parentElement;
+    if (!cell || !row || row.tagName.toLowerCase() !== "tr") return "";
+    const cells = Array.from(row.children);
+    const index = cells.indexOf(cell);
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = cells[cursor];
+      if (!candidate.matches("td, th")) continue;
+      if (
+        candidate.querySelector(
+          "input, select, textarea, button",
+        )
+      ) {
+        break;
+      }
+      const label = fieldLabel(candidate.textContent);
+      if (label) return label;
+    }
+    return "";
+  }
+
+  function hasRequiredMarker(element) {
+    if (
+      element.hasAttribute("required") ||
+      element.getAttribute("aria-required") === "true"
+    ) {
+      return true;
+    }
+    const candidates = [];
     const parent = element.closest("label");
-    if (parent) labels.push(text(parent.textContent));
+    if (parent) candidates.push(parent.textContent);
     if (element.id) {
       document
         .querySelectorAll(`label[for="${CSS.escape(element.id)}"]`)
-        .forEach((label) => labels.push(text(label.textContent)));
+        .forEach((label) => candidates.push(label.textContent));
+    }
+    const cell = element.closest("td, th");
+    const row = cell?.parentElement;
+    if (cell && row?.tagName.toLowerCase() === "tr") {
+      const cells = Array.from(row.children);
+      const index = cells.indexOf(cell);
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const candidate = cells[cursor];
+        if (!candidate.matches("td, th")) continue;
+        if (
+          candidate.querySelector(
+            "input, select, textarea, button",
+          )
+        ) {
+          break;
+        }
+        candidates.push(candidate.textContent);
+        break;
+      }
+    }
+    return candidates.some((candidate) => /[*＊]/.test(candidate || ""));
+  }
+
+  function sectionLabelFor(element) {
+    return repeatGroupForSection(
+      element.closest(".set_i_div, [data-ora-repeat-group]"),
+    )?.label || "";
+  }
+
+  function labelsFor(element) {
+    const labels = [];
+    const parent = element.closest("label");
+    if (parent) labels.push(fieldLabel(parent.textContent));
+    if (element.id) {
+      document
+        .querySelectorAll(`label[for="${CSS.escape(element.id)}"]`)
+        .forEach((label) => labels.push(fieldLabel(label.textContent)));
     }
     if (element.getAttribute("aria-label")) {
-      labels.push(text(element.getAttribute("aria-label")));
+      labels.push(fieldLabel(element.getAttribute("aria-label")));
+    }
+    if (!labels.length) {
+      const tableLabel = precedingTableLabel(element);
+      if (tableLabel) labels.push(tableLabel);
     }
     if (!labels.length && element.parentElement) {
       const wrapper = element.parentElement;
@@ -53,10 +190,33 @@
         wrapperText &&
         wrapperText.length <= 200
       ) {
-        labels.push(wrapperText);
+        labels.push(fieldLabel(wrapperText));
       }
     }
+    const sectionLabel = sectionLabelFor(element);
+    if (sectionLabel) labels.push(sectionLabel);
     return [...new Set(labels.filter(Boolean))];
+  }
+
+  function optionLabelFor(element) {
+    const parent = element.closest("label");
+    if (parent) return fieldLabel(parent.textContent);
+    const parts = [];
+    let sibling = element.nextSibling;
+    while (sibling) {
+      if (
+        sibling instanceof HTMLInputElement ||
+        sibling instanceof HTMLSelectElement ||
+        sibling instanceof HTMLTextAreaElement ||
+        sibling instanceof HTMLButtonElement
+      ) {
+        break;
+      }
+      const value = fieldLabel(sibling.textContent);
+      if (value) parts.push(value);
+      sibling = sibling.nextSibling;
+    }
+    return parts.join(" ") || element.getAttribute("value") || "on";
   }
 
   function isDeclarationControl(element) {
@@ -129,13 +289,11 @@
           ? [
               {
                 value: element.getAttribute("value") || "on",
-                label:
-                  labelsFor(element)[0] ||
-                  element.getAttribute("value") ||
-                  "on",
+                label: optionLabelFor(element),
               },
             ]
           : [];
+    const repeatContext = repeatContextFor(element);
     return {
       tag,
       control_type: type,
@@ -144,18 +302,40 @@
       labels: labelsFor(element),
       placeholder: element.getAttribute("placeholder") || null,
       autocomplete: element.getAttribute("autocomplete") || null,
-      required: element.hasAttribute("required"),
+      required: hasRequiredMarker(element),
       disabled: element.hasAttribute("disabled"),
       readonly: element.hasAttribute("readonly"),
       constraints,
       options,
+      ...(repeatContext || {}),
     };
+  }
+
+  function interactionKindFor(element) {
+    if (
+      !(element instanceof HTMLInputElement) ||
+      !element.hasAttribute("readonly")
+    ) {
+      return null;
+    }
+    const handler = element.getAttribute("onclick") || "";
+    if (/\bselectGraduateSchool\s*\(/.test(handler)) {
+      return "hotjob_school_picker";
+    }
+    if (/\bchooseItemValues\s*\(/.test(handler)) {
+      return "hotjob_taxonomy_picker";
+    }
+    if (/\bWdatePicker\s*\(/.test(handler)) {
+      return /dateFmt\s*:\s*['"]yyyy-MM['"]/.test(handler)
+        ? "hotjob_month_picker"
+        : "hotjob_date_picker";
+    }
+    return null;
   }
 
   async function signature(element) {
     const metadata = fieldMetadata(element);
-    return sha256(
-      stableStringify({
+    const payload = {
         tag: metadata.tag,
         type: metadata.control_type,
         id: metadata.field_id,
@@ -168,8 +348,12 @@
         readonly: metadata.readonly,
         constraints: metadata.constraints,
         options: metadata.options,
-      }),
-    );
+    };
+    if (metadata.repeat_group !== undefined) {
+      payload.repeat_group = metadata.repeat_group;
+      payload.repeat_index = metadata.repeat_index;
+    }
+    return sha256(stableStringify(payload));
   }
 
   function rootSubmission(root) {
@@ -189,9 +373,7 @@
   }
 
   async function fingerprint(root) {
-    const fields = Array.from(
-      root.querySelectorAll("input, select, textarea, button"),
-    );
+    const fields = observableControls(root);
     const fieldSignatures = [];
     for (const field of fields) fieldSignatures.push(await signature(field));
     const submission = rootSubmission(root);
@@ -224,10 +406,276 @@
     }
   }
 
-  async function inspectForm(form) {
-    const fields = Array.from(
-      form.querySelectorAll("input, select, textarea, button"),
+  function dispatchValueEvents(element) {
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function hasExistingValue(element, root) {
+    if (element instanceof HTMLSelectElement) {
+      if (!text(element.value)) return false;
+      const selected = element.selectedOptions[0];
+      const selectedLabel = text(selected?.textContent).toLowerCase();
+      return !(
+        element.selectedIndex === 0 &&
+        /^(?:请选择|请选择一项|select|please select)/.test(selectedLabel)
+      );
+    }
+    if (
+      element instanceof HTMLInputElement &&
+      element.type === "radio"
+    ) {
+      if (!element.name) return element.checked;
+      return Array.from(
+        root.querySelectorAll(
+          `input[type="radio"][name="${CSS.escape(element.name)}"]`,
+        ),
+      ).some((member) => member.checked);
+    }
+    if (
+      element instanceof HTMLInputElement &&
+      element.type === "checkbox"
+    ) {
+      return element.checked;
+    }
+    return Boolean(text(element.value));
+  }
+
+  function dispatchSearchEvents(element) {
+    dispatchValueEvents(element);
+    element.dispatchEvent(
+      new KeyboardEvent("keyup", { bubbles: true, key: "Unidentified" }),
     );
+  }
+
+  async function waitForValue(read, timeoutMs = 2500) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      const value = read();
+      if (value) return value;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return null;
+  }
+
+  function sameText(left, right) {
+    return text(left).toLocaleLowerCase() === text(right).toLocaleLowerCase();
+  }
+
+  function visibleElement(selector, root = document) {
+    return Array.from(root.querySelectorAll(selector)).find(isRendered) || null;
+  }
+
+  function closeVisiblePicker(root) {
+    const cancel =
+      visibleElement(
+        'input[value="取消"], a[title="取消"], [onclick="cancel();"]',
+        root,
+      ) ||
+      visibleElement(
+        'input[value="取消"], a[title="取消"], [onclick="cancel();"]',
+      );
+    cancel?.click();
+  }
+
+  async function fillHotjobSchoolPicker(element, value) {
+    element.click();
+    const search = await waitForValue(
+      () =>
+        visibleElement(
+          'input[placeholder*="学校名称"], input[placeholder*="学校关键字"], input.search-school-input',
+        ),
+      6000,
+    );
+    if (!search) {
+      return { ok: false, reasonCode: "school_picker_not_opened" };
+    }
+    let picker = search.parentElement;
+    while (picker && picker !== document.body) {
+      if (
+        /请选择学校/.test(text(picker.textContent)) &&
+        picker.querySelectorAll("a").length >= 5
+      ) {
+        break;
+      }
+      picker = picker.parentElement;
+    }
+    picker = picker || document.body;
+    nativeSet(search, "value", value);
+    dispatchSearchEvents(search);
+    const exactSchool = await waitForValue(
+      () =>
+        Array.from(
+          picker.querySelectorAll("a[title], a"),
+        ).find(
+          (candidate) =>
+            isRendered(candidate) &&
+            sameText(
+              candidate.getAttribute("title") || candidate.textContent,
+              value,
+            ),
+        ) || null,
+      2000,
+    );
+    if (exactSchool) {
+      exactSchool.click();
+    } else {
+      const manualLink = Array.from(
+        picker.querySelectorAll("a"),
+      ).find(
+        (candidate) =>
+          isRendered(candidate) &&
+          /手动添加/.test(text(candidate.textContent)),
+      );
+      manualLink?.click();
+      const manual = await waitForValue(
+        () =>
+          visibleElement(
+            '.add-school-input, #cOther, input[placeholder*="手动添加"], input[placeholder*="院校名称"]',
+            picker,
+          ),
+        1000,
+      );
+      const confirm = await waitForValue(
+        () =>
+          visibleElement(
+            '.add-school-ok, #sure, input[value="确认"], button[value="确认"]',
+            picker,
+          ),
+        1000,
+      );
+      if (!manual || !confirm) {
+        return { ok: false, reasonCode: "school_option_not_found" };
+      }
+      nativeSet(manual, "value", value);
+      dispatchValueEvents(manual);
+      confirm.click();
+    }
+    const filled = await waitForValue(
+      () => (sameText(element.value, value) ? true : null),
+      1500,
+    );
+    if (!filled) {
+      closeVisiblePicker(picker);
+      return { ok: false, reasonCode: "school_value_not_applied" };
+    }
+    return { ok: true, reasonCode: null };
+  }
+
+  async function fillHotjobTaxonomyPicker(element, value) {
+    element.click();
+    const picker = await waitForValue(() => {
+      const candidate = document.getElementById("main_content");
+      return candidate && isRendered(candidate) ? candidate : null;
+    });
+    if (!picker) {
+      return { ok: false, reasonCode: "taxonomy_picker_not_opened" };
+    }
+
+    const search = visibleElement(
+      'input.select_subject_temp, input[placeholder*="专业名称"]',
+      picker,
+    );
+    if (search) {
+      nativeSet(search, "value", value);
+      dispatchSearchEvents(search);
+    }
+    const exactOption = await waitForValue(
+      () =>
+        Array.from(
+          picker.querySelectorAll(
+            "[data-value], [title], .ac_results li, td, li",
+          ),
+        ).find(
+          (candidate) =>
+            candidate !== search &&
+            isRendered(candidate) &&
+            sameText(
+              candidate.getAttribute("title") || candidate.textContent,
+              value,
+            ),
+        ) || null,
+      800,
+    );
+    if (exactOption) {
+      exactOption.click();
+      const confirm = visibleElement(
+        '[onclick="makeSure();"], [onclick^="makeSure("]',
+        picker,
+      );
+      confirm?.click();
+    } else {
+      const manualLink = visibleElement(".add-subject-link", picker);
+      manualLink?.click();
+      const manual = await waitForValue(
+        () => visibleElement(".add-subject-input", picker),
+        500,
+      );
+      const confirm = visibleElement(".add-subject-ok", picker);
+      if (!manual || !confirm) {
+        closeVisiblePicker(picker);
+        return { ok: false, reasonCode: "taxonomy_option_not_found" };
+      }
+      nativeSet(manual, "value", value);
+      dispatchValueEvents(manual);
+      confirm.click();
+    }
+    const filled = await waitForValue(
+      () => (sameText(element.value, value) ? true : null),
+      1500,
+    );
+    if (!filled) {
+      closeVisiblePicker(picker);
+      return { ok: false, reasonCode: "taxonomy_value_not_applied" };
+    }
+    return { ok: true, reasonCode: null };
+  }
+
+  async function fillSupportedInteraction(element, field) {
+    if (field.interaction_kind === "hotjob_school_picker") {
+      return fillHotjobSchoolPicker(element, field.value);
+    }
+    if (field.interaction_kind === "hotjob_taxonomy_picker") {
+      return fillHotjobTaxonomyPicker(element, field.value);
+    }
+    if (field.interaction_kind === "hotjob_month_picker") {
+      if (!/^\d{4}-\d{2}$/.test(field.value)) {
+        return { ok: false, reasonCode: "invalid_month_value" };
+      }
+      nativeSet(element, "value", field.value);
+      dispatchValueEvents(element);
+      return { ok: true, reasonCode: null };
+    }
+    if (field.interaction_kind === "hotjob_date_picker") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(field.value)) {
+        return { ok: false, reasonCode: "invalid_date_value" };
+      }
+      nativeSet(element, "value", field.value);
+      dispatchValueEvents(element);
+      return { ok: true, reasonCode: null };
+    }
+    return { ok: false, reasonCode: "unsupported_interaction" };
+  }
+
+  function relatedOriginals(element, interactionKind) {
+    if (interactionKind !== "hotjob_taxonomy_picker") return [];
+    const handler = element.getAttribute("onclick") || "";
+    const match = handler.match(
+      /\bchooseItemValues\s*\(\s*[^,]+,\s*['"]([^'"]+)['"]/,
+    );
+    const related = match ? document.getElementById(match[1]) : null;
+    if (!related) return [];
+    return [
+      {
+        selector: selectorFor(related),
+        value: related.value,
+        title: related.getAttribute("title"),
+      },
+    ];
+  }
+
+  async function inspectForm(form) {
+    const fields = observableControls(form);
     const fieldSignatures = [];
     for (const field of fields) {
       fieldSignatures.push(await signature(field));
@@ -314,6 +762,212 @@
     ).filter(isRendered);
   }
 
+  function observableControls(root) {
+    return Array.from(
+      root.querySelectorAll(
+        'input:not([type="hidden"]), select, textarea',
+      ),
+    ).filter(isRendered);
+  }
+
+  function repeatGroupSections(root, group) {
+    const scopes = [root];
+    if (root !== document) scopes.push(document);
+    const seen = new Set();
+    const sections = [];
+    for (const scope of scopes) {
+      for (const section of scope.querySelectorAll(
+        ".set_i_div, [data-ora-repeat-group]",
+      )) {
+        if (seen.has(section)) continue;
+        seen.add(section);
+        if (repeatGroupForSection(section)?.group === group) {
+          sections.push(section);
+        }
+      }
+    }
+    return sections;
+  }
+
+  function repeatGroupCounts(root) {
+    const counts = {};
+    for (const element of observableControls(root)) {
+      const context = repeatContextFor(element);
+      if (!context) continue;
+      counts[context.repeat_group] = Math.max(
+        counts[context.repeat_group] || 0,
+        context.repeat_index + 1,
+      );
+    }
+    return counts;
+  }
+
+  function repeatAddControl(root, group) {
+    const groupLabel = REPEAT_GROUP_LABELS[group];
+    if (!groupLabel) return null;
+    const candidates = Array.from(
+      new Set([
+        ...root.querySelectorAll(
+          'a, button, input[type="button"], [role="button"], [onclick]',
+        ),
+        ...document.querySelectorAll(
+          'a, button, input[type="button"], [role="button"], [onclick]',
+        ),
+      ]),
+    );
+    return (
+      candidates.find((candidate) => {
+        if (!isRendered(candidate)) return false;
+        const copy = text(
+          candidate.textContent || candidate.getAttribute("value") || "",
+        ).replace(/\s+/g, "");
+        if (
+          ![
+            `增加更多${groupLabel}`,
+            `新增${groupLabel}`,
+            `添加${groupLabel}`,
+          ].some((expected) => copy.includes(expected))
+        ) {
+          return false;
+        }
+        const type = (candidate.getAttribute("type") || "").toLowerCase();
+        const handler = candidate.getAttribute("onclick") || "";
+        return (
+          type !== "submit" &&
+          !/(?:submit|save|保存|完成|下一步)/i.test(handler)
+        );
+      }) || null
+    );
+  }
+
+  function canPrepareRepeatGroups(root) {
+    const hostname = location.hostname.toLowerCase();
+    return (
+      hostname === "hotjob.cn" ||
+      hostname.endsWith(".hotjob.cn") ||
+      Boolean(root.querySelector("[data-ora-repeat-group]"))
+    );
+  }
+
+  function rollbackRepeatAdditions(sections) {
+    for (const section of [...sections].reverse()) {
+      if (section?.isConnected) section.remove();
+    }
+  }
+
+  async function prepareRepeatGroups(task) {
+    if (location.origin !== task.allowed_origin) {
+      return { ok: false, message: "当前页面来源与填写任务不一致。" };
+    }
+    let candidate;
+    try {
+      candidate = chooseStepRoot();
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "无法识别当前报名步骤。",
+      };
+    }
+    const beforeFingerprint = await fingerprint(candidate.root);
+    if (beforeFingerprint !== task.form_fingerprint) {
+      return { ok: false, message: "报名步骤结构已经变化，请重新审阅。" };
+    }
+    const requirements = (task.plan?.repeat_groups || []).filter(
+      (item) => item.pending_count > 0,
+    );
+    if (!requirements.length) {
+      return { ok: true, changed: false, added_count: 0, groups: [] };
+    }
+    if (!canPrepareRepeatGroups(candidate.root)) {
+      return {
+        ok: false,
+        message: "当前官网尚未验证可安全自动新增重复记录，请手动建立空白记录后重新识别。",
+      };
+    }
+
+    const addedSections = [];
+    const groups = [];
+    for (const requirement of requirements) {
+      const counts = repeatGroupCounts(candidate.root);
+      let observedCount = counts[requirement.group] || 0;
+      if (observedCount !== requirement.observed_count) {
+        rollbackRepeatAdditions(addedSections);
+        return {
+          ok: false,
+          message: `${requirement.label}的页面记录数已经变化，请重新识别。`,
+        };
+      }
+      if (!repeatAddControl(candidate.root, requirement.group)) {
+        rollbackRepeatAdditions(addedSections);
+        return {
+          ok: false,
+          message: `没有找到${requirement.label}的安全新增入口。`,
+        };
+      }
+      const groupAdditions = [];
+      while (observedCount < requirement.desired_count) {
+        const addControl = repeatAddControl(
+          candidate.root,
+          requirement.group,
+        );
+        if (!addControl) {
+          rollbackRepeatAdditions(addedSections);
+          return {
+            ok: false,
+            message: `${requirement.label}新增过程中入口消失，已撤回本轮新增记录。`,
+          };
+        }
+        const beforeSections = new Set(
+          repeatGroupSections(candidate.root, requirement.group),
+        );
+        addControl.click();
+        const newSections = await waitForValue(() => {
+          const additions = repeatGroupSections(
+            candidate.root,
+            requirement.group,
+          ).filter((section) => !beforeSections.has(section));
+          return additions.length ? additions : null;
+        }, 3000);
+        if (!newSections || newSections.length !== 1) {
+          rollbackRepeatAdditions([
+            ...addedSections,
+            ...(newSections || []),
+          ]);
+          return {
+            ok: false,
+            message: `${requirement.label}新增没有生效。招聘网站可能已经登录过期或页面没有响应，请重新登录后再识别当前步骤。`,
+          };
+        }
+        const nextCount =
+          repeatGroupCounts(candidate.root)[requirement.group] || 0;
+        if (nextCount !== observedCount + 1) {
+          rollbackRepeatAdditions([...addedSections, ...newSections]);
+          return {
+            ok: false,
+            message: `${requirement.label}新增结构无法可靠定位。`,
+          };
+        }
+        addedSections.push(newSections[0]);
+        groupAdditions.push(newSections[0]);
+        observedCount = nextCount;
+      }
+      groups.push({
+        group: requirement.group,
+        added_count: groupAdditions.length,
+      });
+    }
+    globalThis.__ORA_REPEAT_ADDITIONS__ =
+      globalThis.__ORA_REPEAT_ADDITIONS__ || {};
+    globalThis.__ORA_REPEAT_ADDITIONS__[task.fill_task_id] = addedSections;
+    return {
+      ok: true,
+      changed: addedSections.length > 0,
+      added_count: addedSections.length,
+      groups,
+    };
+  }
+
   function rootCandidate(root, kind) {
     if (!isRendered(root)) return null;
     const controls = editableControls(root);
@@ -393,9 +1047,7 @@
   }
 
   async function observeRoot(root) {
-    const elements = Array.from(
-      root.querySelectorAll("input, select, textarea, button"),
-    );
+    const elements = observableControls(root);
     const fields = [];
     for (const element of elements) {
       fields.push({
@@ -433,6 +1085,15 @@
   async function execute(task) {
     if (location.origin !== task.allowed_origin) {
       return { ok: false, message: "当前页面来源与填写任务不一致。" };
+    }
+    const undoKey = task.plan?.step_id
+      ? `${task.fill_task_id}:${task.plan.step_id}`
+      : task.fill_task_id;
+    if (globalThis.__ORA_FILL_UNDO__?.[undoKey]) {
+      return {
+        ok: false,
+        message: "当前步骤已经填写，请先撤销本次填写后再重试。",
+      };
     }
     const resolved = [];
     for (const field of task.plan.fields) {
@@ -509,7 +1170,7 @@
       }
       if (
         element.matches(
-          'input[type="file"], input[type="password"], input[type="submit"], input[type="button"], input[type="reset"], input[type="image"], button, [disabled], [readonly]',
+          'input[type="file"], input[type="password"], input[type="submit"], input[type="button"], input[type="reset"], input[type="image"], button, [disabled]',
         )
       ) {
         results.push({
@@ -519,17 +1180,59 @@
         });
         continue;
       }
+      const observedInteraction = interactionKindFor(element);
+      if (
+        field.interaction_kind &&
+        observedInteraction !== field.interaction_kind
+      ) {
+        results.push({
+          field_signature: field.field_signature,
+          status: "blocked",
+          reason_code: "interaction_structure_changed",
+        });
+        continue;
+      }
+      if (element.hasAttribute("readonly") && !field.interaction_kind) {
+        results.push({
+          field_signature: field.field_signature,
+          status: "blocked",
+          reason_code: "manual_boundary",
+        });
+        continue;
+      }
+      if (hasExistingValue(element, candidate.root)) {
+        results.push({
+          field_signature: field.field_signature,
+          status: "skipped",
+          reason_code: "already_has_value",
+        });
+        continue;
+      }
       originals.push({
         selector: field.selector,
         value: element.value,
+        title: element.getAttribute("title"),
         checked: Boolean(element.checked),
         field_signature: field.field_signature,
+        related: relatedOriginals(element, field.interaction_kind),
         radioGroup:
           element instanceof HTMLInputElement &&
           element.type === "radio"
             ? radioSnapshots.get(element.name || element)
             : null,
       });
+      if (field.interaction_kind) {
+        const interactionResult = await fillSupportedInteraction(
+          element,
+          field,
+        );
+        results.push({
+          field_signature: field.field_signature,
+          status: interactionResult.ok ? "filled" : "missing",
+          reason_code: interactionResult.reasonCode,
+        });
+        continue;
+      }
       if (element instanceof HTMLSelectElement) {
         const option = Array.from(element.options).find(
           (item) =>
@@ -572,8 +1275,7 @@
       } else {
         nativeSet(element, "value", field.value);
       }
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true }));
+      dispatchValueEvents(element);
       results.push({
         field_signature: field.field_signature,
         status: "filled",
@@ -582,13 +1284,17 @@
     }
     globalThis.__ORA_FILL_UNDO__ =
       globalThis.__ORA_FILL_UNDO__ || {};
-    const undoKey = task.plan?.step_id
-      ? `${task.fill_task_id}:${task.plan.step_id}`
-      : task.fill_task_id;
-    globalThis.__ORA_FILL_UNDO__[undoKey] = {
-      pageFingerprint,
-      originals,
-    };
+    const repeatAdditions =
+      globalThis.__ORA_REPEAT_ADDITIONS__?.[task.fill_task_id] || [];
+    if (originals.length || repeatAdditions.length) {
+      globalThis.__ORA_FILL_UNDO__[undoKey] = {
+        pageFingerprint,
+        originals,
+        repeatAdditions,
+      };
+    } else {
+      delete globalThis.__ORA_FILL_UNDO__[undoKey];
+    }
     return {
       ok: true,
       event_type: "fill_executed",
@@ -643,16 +1349,40 @@
         continue;
       }
       nativeSet(element, "value", original.value);
+      if (original.title === null) {
+        element.removeAttribute("title");
+      } else {
+        element.setAttribute("title", original.title);
+      }
       if ("checked" in element) {
         nativeSet(element, "checked", original.checked);
       }
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true }));
+      for (const related of original.related || []) {
+        const relatedElement = document.querySelector(related.selector);
+        if (!relatedElement) continue;
+        nativeSet(relatedElement, "value", related.value);
+        if (related.title === null) {
+          relatedElement.removeAttribute("title");
+        } else {
+          relatedElement.setAttribute("title", related.title);
+        }
+        dispatchValueEvents(relatedElement);
+      }
+      dispatchValueEvents(element);
       results.push({
         field_signature: original.field_signature,
         status: "filled",
         reason_code: "restored",
       });
+    }
+    let removedRepeatGroupCount = 0;
+    for (const section of [...(entry.repeatAdditions || [])].reverse()) {
+      if (!section?.isConnected) continue;
+      section.remove();
+      removedRepeatGroupCount += 1;
+    }
+    if (globalThis.__ORA_REPEAT_ADDITIONS__) {
+      delete globalThis.__ORA_REPEAT_ADDITIONS__[taskId];
     }
     delete globalThis.__ORA_FILL_UNDO__[undoKey];
     return {
@@ -661,6 +1391,7 @@
       step_id: stepId,
       page_fingerprint: entry.pageFingerprint,
       field_results: results,
+      removed_repeat_group_count: removedRepeatGroupCount,
     };
   }
 
@@ -669,6 +1400,7 @@
     execute,
     inspectForm,
     observePage,
+    prepareRepeatGroups,
     undo,
   });
 })();

@@ -173,7 +173,7 @@ button:disabled {
 }
 
 .count {
-  min-width: 28px;
+  min-width: 82px;
   height: 24px;
   display: inline-flex;
   align-items: center;
@@ -183,6 +183,13 @@ button:disabled {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 700;
+}
+
+.field-row--missing > code,
+.field-row--manual > code,
+.field-row--unmapped > code,
+.field-row--review > code {
+  color: #986514;
 }
 
 .field-list {
