@@ -32,10 +32,12 @@ const targetOrigin = document.querySelector("#target-origin");
 const stepLabel = document.querySelector("#step-label");
 const fieldCount = document.querySelector("#field-count");
 const fieldList = document.querySelector("#field-list");
+const reviewApproval = document.querySelector("#review-approved");
 const executeButton = document.querySelector("#execute");
 const undoButton = document.querySelector("#undo");
 const connection = document.querySelector("#connection");
 const message = document.querySelector("#message");
+const openWorkbenchButton = document.querySelector("#open-workbench");
 
 let currentTask = null;
 let currentServer = null;
@@ -53,15 +55,68 @@ function showMessage(text, error = false) {
   message.classList.toggle("error", error);
 }
 
+function reviewKey(task) {
+  const stepId = task?.plan?.step_id;
+  if (!task?.fill_task_id || !stepId || !task.form_fingerprint) return null;
+  return [
+    task.fill_task_id,
+    task.version,
+    stepId,
+    task.form_fingerprint,
+    currentFrameId,
+  ].join(":");
+}
+
+function resetReviewApproval() {
+  reviewApproval.checked = false;
+  reviewApproval.disabled = true;
+  reviewApproval.dataset.reviewKey = "";
+  executeButton.disabled = true;
+}
+
+function offerReviewApproval(task) {
+  resetReviewApproval();
+  if (
+    currentFrameId === null ||
+    !["ready", "previewed"].includes(task?.status) ||
+    !task?.plan?.fields?.length
+  ) {
+    return;
+  }
+  const key = reviewKey(task);
+  if (!key) return;
+  reviewApproval.dataset.reviewKey = key;
+  reviewApproval.disabled = false;
+}
+
+function currentReviewApproved() {
+  const key = reviewKey(currentTask);
+  return Boolean(
+    key &&
+      reviewApproval.checked &&
+      !reviewApproval.disabled &&
+      reviewApproval.dataset.reviewKey === key,
+  );
+}
+
 function connectedUi(connected) {
   setup.hidden = connected;
   assist.hidden = !connected;
   disconnectButton.hidden = !connected;
+  openWorkbenchButton.disabled = !connected;
   if (!connected) {
     review.hidden = true;
-    executeButton.disabled = true;
+    resetReviewApproval();
     undoButton.disabled = true;
   }
+}
+
+function workbenchUrl(serverUrl) {
+  const url = new URL(serverUrl);
+  url.pathname = "/app/";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 function isLocalDevelopmentServer(value) {
@@ -438,7 +493,7 @@ function restoreTaskUi(task) {
   if (task.status === "ready" || task.status === "previewed") {
     connection.textContent =
       `第 ${task.plan.step_index ?? 1} 步待确认`;
-    executeButton.disabled = currentFrameId === null;
+    offerReviewApproval(task);
     return;
   }
   if (task.status === "manual_only") {
@@ -518,7 +573,7 @@ taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   message.hidden = true;
   review.hidden = true;
-  executeButton.disabled = true;
+  resetReviewApproval();
   undoButton.disabled = true;
   connection.textContent = "正在识别当前步骤";
   try {
@@ -558,7 +613,7 @@ taskForm.addEventListener("submit", async (event) => {
       } else {
         connection.textContent =
           `第 ${currentTask.plan.step_index ?? 1} 步待确认`;
-        executeButton.disabled = false;
+        offerReviewApproval(currentTask);
         const questionCount =
           currentTask.plan.profile_questions?.length ?? 0;
         const pendingGroups = pendingRepeatGroups(currentTask);
@@ -660,6 +715,7 @@ async function discoverCurrentStep(tab) {
 }
 
 function renderTask(task) {
+  resetReviewApproval();
   const stepIndex = task.plan.step_index ?? 1;
   stepLabel.textContent = `第 ${stepIndex} 步`;
   targetOrigin.textContent = new URL(
@@ -755,7 +811,11 @@ executeButton.addEventListener("click", async () => {
   ) {
     return;
   }
-  executeButton.disabled = true;
+  if (!currentReviewApproved()) {
+    showMessage("请先核对当前预览并勾选确认，再执行页面填写。", true);
+    return;
+  }
+  resetReviewApproval();
   message.hidden = true;
   let executionCompleted = false;
   try {
@@ -848,24 +908,52 @@ executeButton.addEventListener("click", async () => {
         item.status === "skipped" &&
         item.reason_code === "already_has_value",
     ).length;
+    const unresolvedCount = result.field_results.filter((item) =>
+      ["missing", "blocked", "fingerprint_mismatch"].includes(
+        item.status,
+      ),
+    ).length;
     undoButton.disabled = filledCount === 0;
     executionCompleted = true;
+    if (result.event_type === "fill_failed") {
+      connection.textContent = "填写未完成";
+      showMessage(
+        `没有字段通过页面回读验证；保留 ${preservedCount} 个已有字段，另有 ${unresolvedCount} 个字段未可靠写入。请重新识别当前步骤或手动处理。`,
+        true,
+      );
+      return;
+    }
     const profileQuestionCount =
       currentTask.plan.profile_questions?.length ?? 0;
-    connection.textContent = profileQuestionCount
+    connection.textContent = profileQuestionCount || unresolvedCount
       ? `第 ${currentTask.plan.step_index ?? 1} 步待补档案`
       : `第 ${currentTask.plan.step_index ?? 1} 步已填写`;
-    const fillSummary = `已填写 ${filledCount} 个空字段${
-      preservedCount ? `；保留 ${preservedCount} 个已有字段` : ""
-    }。`;
+    const fillSummary = filledCount
+      ? `已填写 ${filledCount} 个空字段${
+          preservedCount ? `；保留 ${preservedCount} 个已有字段` : ""
+        }${unresolvedCount ? `；${unresolvedCount} 个字段未可靠写入` : ""}。`
+      : `当前步骤没有新的空字段需要填写${
+          preservedCount ? `；保留 ${preservedCount} 个已有字段` : ""
+        }。`;
     showMessage(profileQuestionCount
       ? `${fillSummary}本步骤尚未完成：还有 ${profileQuestionCount} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。`
-      : `${fillSummary}证据已同步到 Web，核对后请手动进入下一步。`);
+      : unresolvedCount
+        ? `${fillSummary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。`
+        : `${fillSummary}证据已同步到 Web，核对后请手动进入下一步。`,
+    unresolvedCount > 0);
   } catch (error) {
     connection.textContent = "填写未完成";
     showMessage(error instanceof Error ? error.message : "填写失败。", true);
   } finally {
-    executeButton.disabled = executionCompleted;
+    if (
+      !executionCompleted &&
+      currentTask &&
+      ["ready", "previewed"].includes(currentTask.status)
+    ) {
+      offerReviewApproval(currentTask);
+    } else {
+      resetReviewApproval();
+    }
   }
 });
 
@@ -890,13 +978,13 @@ undoButton.addEventListener("click", async () => {
     if (!result?.ok) throw new Error(result?.message ?? "撤销失败。");
     await sendEvidence(currentTask.fill_task_id, result);
     connection.textContent = "已撤销当前步骤的填写";
-    executeButton.disabled = false;
+    resetReviewApproval();
     showMessage(
       `已恢复 ${result.field_results.length} 个字段${
         result.removed_repeat_group_count
           ? `；移除 ${result.removed_repeat_group_count} 条本次新增记录`
           : ""
-      }。`,
+      }。如需再次填写，请重新识别当前步骤。`,
     );
   } catch (error) {
     showMessage(error instanceof Error ? error.message : "撤销失败。", true);
@@ -939,6 +1027,19 @@ async function sendEvidence(taskId, result) {
     currentTask.version = serverTask.version;
   }
 }
+
+reviewApproval.addEventListener("change", () => {
+  executeButton.disabled = !currentReviewApproved();
+});
+
+openWorkbenchButton.addEventListener("click", async () => {
+  if (!currentServer) return;
+  try {
+    await chrome.tabs.create({ url: workbenchUrl(currentServer) });
+  } catch {
+    showMessage("工作台暂时无法打开，请稍后重试。", true);
+  }
+});
 
 serverInput.addEventListener("input", updateApiKeyRequirement);
 

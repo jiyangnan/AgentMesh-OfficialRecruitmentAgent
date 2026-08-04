@@ -30,7 +30,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
     )
     summary = json.loads(completed.stdout)
 
-    assert summary["version"] == "0.6.0"
+    assert summary["version"] == "0.6.4"
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())

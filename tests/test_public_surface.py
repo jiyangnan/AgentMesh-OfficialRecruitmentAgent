@@ -39,6 +39,8 @@ def test_public_copy_names_repository_and_product_separately() -> None:
     assert "`AgentMesh-OfficialRecruitmentAgent`" in readme
     assert "# AgentMesh-OfficialRecruitment" in readme
     assert "不会安装或创建另一个 AI Agent" in readme
+    assert "我已核对以上预览" in readme
+    assert "页面稳定回读" in readme
 
     cli = (
         ROOT

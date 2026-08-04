@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AgentMesh360 官网申请填写器",
-  "version": "0.6.0",
+  "version": "0.6.4",
   "description": "连接 Agent、Chrome 与 Web，识别并辅助填写当前官网招聘页面",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [

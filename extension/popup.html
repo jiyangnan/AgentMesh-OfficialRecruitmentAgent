@@ -64,6 +64,10 @@
         <p class="boundary">
           附件、验证码、声明、下一步和最终提交保持手动。
         </p>
+        <label class="review-approval">
+          <input id="review-approved" type="checkbox" disabled />
+          <span>我已核对以上预览</span>
+        </label>
         <div class="actions">
           <button id="undo" class="secondary" type="button" disabled>
             撤销本次填写
@@ -74,6 +78,12 @@
         </div>
       </section>
       <p id="message" class="message" hidden></p>
+      <nav class="popup-footer" aria-label="工作台入口">
+        <button id="open-workbench" class="workbench-link" type="button" disabled>
+          <span>前往工作台</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </nav>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

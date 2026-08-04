@@ -6,12 +6,15 @@
 3. 若缺少档案，只读取用户明确指定的标准简历。
 4. 运行 `ora-workbench profile-schema`，按返回契约生成结构化字段。
 5. 运行 `ora-workbench propose-profile-import` 创建待用户在 Web 审阅的档案提案。
-6. 用户自行打开招聘官网当前页面；通过 Chrome 扩展识别和辅助填写当前步骤。
+6. 用户自行打开招聘官网当前页面；通过 Chrome 扩展识别当前步骤，逐项核对完整预览，
+   勾选“我已核对以上预览”后再确认填写。识别本身不得修改页面。
 7. 若出现标准简历没有覆盖的问题，必须让用户在工作台完整填写并核对本机提案；未收到
    本机确认前不能声称资料已经保存。
-8. 用户亲自处理声明、附件、CAPTCHA、下一步与最终提交。
-9. 使用 `ora-workbench list applications` 和 `ora-workbench application <id>` 查看长期状态。
-10. 对线下面试、笔试等外部进展，只能基于用户提供的证据创建
+8. 扩展只把通过页面稳定回读的字段报告为成功；出现未可靠写入时必须让用户复核，不能
+   声称当前步骤已经填好。用户可以撤销本轮写入。
+9. 用户亲自处理声明、附件、CAPTCHA、下一步与最终提交。
+10. 使用 `ora-workbench list applications` 和 `ora-workbench application <id>` 查看长期状态。
+11. 对线下面试、笔试等外部进展，只能基于用户提供的证据创建
    `ora-workbench propose-transition` 提案，等待 Web 审阅。
 
 `ora-workbench` 是确定性的 CLI 适配器，不是另一个 Agent。私有产品服务和数据库是

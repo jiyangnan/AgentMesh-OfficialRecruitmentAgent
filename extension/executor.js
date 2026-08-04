@@ -458,8 +458,98 @@
     return null;
   }
 
+  async function waitForStableValue(
+    read,
+    timeoutMs = 1200,
+    stableMs = 250,
+  ) {
+    const deadline = Date.now() + timeoutMs;
+    let stableSince = null;
+    while (Date.now() <= deadline) {
+      if (read()) {
+        stableSince ??= Date.now();
+        if (Date.now() - stableSince >= stableMs) return true;
+      } else {
+        stableSince = null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  }
+
   function sameText(left, right) {
     return text(left).toLocaleLowerCase() === text(right).toLocaleLowerCase();
+  }
+
+  function expectedChecked(value) {
+    return ["true", "1", "yes", "on"].includes(
+      String(value).toLowerCase(),
+    );
+  }
+
+  function fieldValueMatches(element, field) {
+    if (!element?.isConnected || !isRendered(element)) return false;
+    if (element instanceof HTMLSelectElement) {
+      const selected = element.selectedOptions[0];
+      return (
+        sameText(element.value, field.value) ||
+        sameText(selected?.textContent, field.value)
+      );
+    }
+    if (
+      element instanceof HTMLInputElement &&
+      element.type === "checkbox"
+    ) {
+      return element.checked === expectedChecked(field.value);
+    }
+    if (
+      element instanceof HTMLInputElement &&
+      element.type === "radio"
+    ) {
+      return element.checked && sameText(element.value, field.value);
+    }
+    return sameText(element.value, field.value);
+  }
+
+  function restoreOriginal(element, original) {
+    if (!element?.isConnected) return false;
+    if (original.radioGroup) {
+      const members = original.radioGroup.filter(
+        (member) => member.element?.isConnected,
+      );
+      for (const member of members) {
+        nativeSet(member.element, "checked", false);
+      }
+      for (const member of members) {
+        if (member.checked) {
+          nativeSet(member.element, "checked", true);
+        }
+        dispatchValueEvents(member.element);
+      }
+      return members.length > 0;
+    }
+    nativeSet(element, "value", original.value);
+    if (original.title === null) {
+      element.removeAttribute("title");
+    } else {
+      element.setAttribute("title", original.title);
+    }
+    if ("checked" in element) {
+      nativeSet(element, "checked", original.checked);
+    }
+    for (const related of original.related || []) {
+      const relatedElement = document.querySelector(related.selector);
+      if (!relatedElement) continue;
+      nativeSet(relatedElement, "value", related.value);
+      if (related.title === null) {
+        relatedElement.removeAttribute("title");
+      } else {
+        relatedElement.setAttribute("title", related.title);
+      }
+      dispatchValueEvents(relatedElement);
+    }
+    dispatchValueEvents(element);
+    return true;
   }
 
   function visibleElement(selector, root = document) {
@@ -1208,7 +1298,7 @@
         });
         continue;
       }
-      originals.push({
+      const original = {
         selector: field.selector,
         value: element.value,
         title: element.getAttribute("title"),
@@ -1220,20 +1310,17 @@
           element.type === "radio"
             ? radioSnapshots.get(element.name || element)
             : null,
-      });
+      };
+      let writeAttempted = false;
+      let failureReason = null;
       if (field.interaction_kind) {
         const interactionResult = await fillSupportedInteraction(
           element,
           field,
         );
-        results.push({
-          field_signature: field.field_signature,
-          status: interactionResult.ok ? "filled" : "missing",
-          reason_code: interactionResult.reasonCode,
-        });
-        continue;
-      }
-      if (element instanceof HTMLSelectElement) {
+        writeAttempted = interactionResult.ok;
+        failureReason = interactionResult.reasonCode;
+      } else if (element instanceof HTMLSelectElement) {
         const option = Array.from(element.options).find(
           (item) =>
             item.value === field.value ||
@@ -1248,6 +1335,7 @@
           continue;
         }
         nativeSet(element, "value", option.value);
+        writeAttempted = true;
       } else if (
         element instanceof HTMLInputElement &&
         element.type === "checkbox"
@@ -1259,6 +1347,7 @@
             String(field.value).toLowerCase(),
           ),
         );
+        writeAttempted = true;
       } else if (
         element instanceof HTMLInputElement &&
         element.type === "radio"
@@ -1272,10 +1361,27 @@
           continue;
         }
         nativeSet(element, "checked", true);
+        writeAttempted = true;
       } else {
         nativeSet(element, "value", field.value);
+        writeAttempted = true;
       }
-      dispatchValueEvents(element);
+      if (!field.interaction_kind && writeAttempted) {
+        dispatchValueEvents(element);
+      }
+      const applied =
+        writeAttempted &&
+        (await waitForStableValue(() => fieldValueMatches(element, field)));
+      if (!applied) {
+        restoreOriginal(element, original);
+        results.push({
+          field_signature: field.field_signature,
+          status: "missing",
+          reason_code: failureReason || "value_not_applied",
+        });
+        continue;
+      }
+      originals.push(original);
       results.push({
         field_signature: field.field_signature,
         status: "filled",
@@ -1295,9 +1401,20 @@
     } else {
       delete globalThis.__ORA_FILL_UNDO__[undoKey];
     }
+    const filledCount = results.filter(
+      (item) => item.status === "filled",
+    ).length;
+    const failedCount = results.filter((item) =>
+      ["missing", "blocked", "fingerprint_mismatch"].includes(
+        item.status,
+      ),
+    ).length;
     return {
       ok: true,
-      event_type: "fill_executed",
+      event_type:
+        filledCount === 0 && failedCount > 0
+          ? "fill_failed"
+          : "fill_executed",
       step_id: task.plan?.step_id ?? null,
       page_fingerprint: pageFingerprint,
       field_results: results,
@@ -1321,58 +1438,11 @@
         });
         continue;
       }
-      if (original.radioGroup) {
-        const members = original.radioGroup.filter(
-          (member) => member.element?.isConnected,
-        );
-        for (const member of members) {
-          nativeSet(member.element, "checked", false);
-        }
-        for (const member of members) {
-          if (member.checked) {
-            nativeSet(member.element, "checked", true);
-          }
-          member.element.dispatchEvent(
-            new Event("input", { bubbles: true }),
-          );
-          member.element.dispatchEvent(
-            new Event("change", { bubbles: true }),
-          );
-        }
-        results.push({
-          field_signature: original.field_signature,
-          status: members.length ? "filled" : "missing",
-          reason_code: members.length
-            ? "restored"
-            : "radio_group_not_found",
-        });
-        continue;
-      }
-      nativeSet(element, "value", original.value);
-      if (original.title === null) {
-        element.removeAttribute("title");
-      } else {
-        element.setAttribute("title", original.title);
-      }
-      if ("checked" in element) {
-        nativeSet(element, "checked", original.checked);
-      }
-      for (const related of original.related || []) {
-        const relatedElement = document.querySelector(related.selector);
-        if (!relatedElement) continue;
-        nativeSet(relatedElement, "value", related.value);
-        if (related.title === null) {
-          relatedElement.removeAttribute("title");
-        } else {
-          relatedElement.setAttribute("title", related.title);
-        }
-        dispatchValueEvents(relatedElement);
-      }
-      dispatchValueEvents(element);
+      const restored = restoreOriginal(element, original);
       results.push({
         field_signature: original.field_signature,
-        status: "filled",
-        reason_code: "restored",
+        status: restored ? "filled" : "missing",
+        reason_code: restored ? "restored" : "field_not_found",
       });
     }
     let removedRepeatGroupCount = 0;
