@@ -720,19 +720,20 @@ class ProductClient:
 class LocalHandoffService:
     store: LocalProfileStore
     product: ProductClient
+    configured_workspace_ref: str
 
     def status(self, workspace_ref: str) -> dict[str, Any]:
-        access = self.product.access()
-        configured_workspace = access.get("workspace_ref")
         return {
             "contract_version": "local-profile-handoff-v1",
             "status": (
                 "ready"
-                if configured_workspace == workspace_ref
+                if self.configured_workspace_ref == workspace_ref
                 else "workspace_mismatch"
             ),
             "workspace_ref": workspace_ref,
-            "workspace_match": configured_workspace == workspace_ref,
+            "workspace_match": (
+                self.configured_workspace_ref == workspace_ref
+            ),
             "local_store": "ready",
             "answer_residency": "local_device",
         }
@@ -980,7 +981,13 @@ def create_handler(
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                # The caller may have closed a read-only status request while
+                # the Agent was still starting. Never turn that into a noisy
+                # traceback or expose response data in process logs.
+                return
 
         def _send_error(self, error: LocalHandoffError) -> None:
             origin = (self.headers.get("Origin") or "").strip()
