@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import stat
 from pathlib import Path
@@ -14,6 +15,7 @@ from official_recruitment_agent.local_profile_handoff import (
     LocalProfileStore,
     ProductClient,
     _binding_value,
+    default_local_profile_path,
 )
 
 
@@ -21,6 +23,23 @@ SENTINEL = "ORA-PRIVATE-SENTINEL-20260804"
 WORKSPACE_REF = "ws_0123456789abcdef0123456789abcdef"
 FILL_TASK_ID = "fill_0123456789abcdef01234567"
 QUESTION_ID = "pq_aaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+def test_local_profile_path_uses_native_windows_local_app_data(
+    tmp_path: Path,
+) -> None:
+    local_app_data = tmp_path / "AppData" / "Local"
+
+    assert default_local_profile_path(
+        platform_name="win32",
+        home=tmp_path,
+        environ={"LOCALAPPDATA": str(local_app_data)},
+    ) == (
+        local_app_data
+        / "AgentMesh360"
+        / "OfficialRecruitment"
+        / "private-profile.sqlite3"
+    )
 
 
 class FakeProductClient:
@@ -249,6 +268,10 @@ def test_handoff_is_origin_bound_and_replay_is_idempotent(
         )
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows privacy is inherited from the user LocalAppData ACL.",
+)
 def test_local_profile_database_permissions_are_private(tmp_path: Path) -> None:
     store = LocalProfileStore(tmp_path / "private-profile.sqlite3")
     connection = store._connect()
@@ -279,6 +302,10 @@ def test_local_profile_database_permissions_are_private(tmp_path: Path) -> None:
         connection.close()
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows privacy is inherited from the user LocalAppData ACL.",
+)
 def test_local_profile_prepares_private_wal_files_before_connect(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -14,6 +14,13 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from official_recruitment_agent.extension_delivery import (
+    default_extension_root,
+    extension_status,
+    open_extension_setup,
+    prepare_extension,
+)
+
 from official_recruitment_agent.workbench.profile_contract import (
     PROFILE_IMPORT_PROPOSAL_TTL_SECONDS,
     PROFILE_SCHEMA_VERSION,
@@ -33,12 +40,46 @@ DEFAULT_BASE_URL = "https://recruit.agentmesh360.com"
 CONTINUITY_SCHEMA_VERSION = 1
 
 
-def _config_path() -> Path:
-    override = os.getenv("ORA_CONFIG_PATH")
+def _ensure_utf8_standard_streams() -> None:
+    """Keep Chinese CLI output readable when Windows redirects stdout."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+
+
+def _config_path(
+    *,
+    platform_name: str | None = None,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> Path:
+    environment = os.environ if environ is None else environ
+    override = environment.get("ORA_CONFIG_PATH")
     if override:
         return Path(override).expanduser()
+    user_home = Path.home() if home is None else home
+    current_platform = platform_name or sys.platform
+    if current_platform == "win32":
+        local_app_data = environment.get("LOCALAPPDATA")
+        base = (
+            Path(local_app_data)
+            if local_app_data
+            else user_home / "AppData" / "Local"
+        )
+        return (
+            base
+            / "AgentMesh360"
+            / "OfficialRecruitment"
+            / "config.json"
+        )
     return (
-        Path.home()
+        user_home
         / ".config"
         / "agentmesh360"
         / "official-recruitment.json"
@@ -155,9 +196,11 @@ def _write_continuity_state(
             json.dumps(state, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        temporary.chmod(0o600)
+        if os.name != "nt":
+            temporary.chmod(0o600)
         os.replace(temporary, path)
-        path.chmod(0o600)
+        if os.name != "nt":
+            path.chmod(0o600)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -306,6 +349,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("doctor")
     subparsers.add_parser("extension-setup")
+    extension = subparsers.add_parser("extension")
+    extension_commands = extension.add_subparsers(
+        dest="extension_command",
+        required=True,
+    )
+    for command in ("prepare", "update", "repair"):
+        extension_action = extension_commands.add_parser(command)
+        extension_action.add_argument("--install-dir", type=Path)
+        extension_action.add_argument("--no-open", action="store_true")
+    extension_status_parser = extension_commands.add_parser("status")
+    extension_status_parser.add_argument("--install-dir", type=Path)
     subparsers.add_parser("profile-schema")
     handoff = subparsers.add_parser("profile-handoff")
     handoff_commands = handoff.add_subparsers(
@@ -376,6 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_standard_streams()
     args = build_parser().parse_args(argv)
     try:
         if args.command == "configure":
@@ -401,7 +456,25 @@ def main(argv: list[str] | None = None) -> int:
                     "选择加载已解压的扩展程序。",
                     "首次打开扩展时填写同一 AgentMesh360 API Key。",
                 ],
+                "recommended_command": "ora-workbench extension prepare",
             }
+        elif args.command == "extension":
+            extension_root = args.install_dir or default_extension_root()
+            if args.extension_command == "status":
+                result = extension_status(extension_root)
+            else:
+                result = prepare_extension(
+                    args.base_url,
+                    extension_root=extension_root,
+                    force=args.extension_command == "repair",
+                )
+                if not args.no_open:
+                    result["opened"] = open_extension_setup(extension_root)
+                result["manual_steps"] = [
+                    "在 Chrome 扩展管理页开启开发者模式。",
+                    "点击加载已解压的扩展程序。",
+                    f"选择目录：{extension_root}",
+                ]
         elif args.command == "profile-schema":
             result = _profile_schema()
         elif args.command == "profile-handoff":
@@ -541,13 +614,16 @@ def _configure(args: argparse.Namespace) -> dict[str, Any]:
         + "\n",
         encoding="utf-8",
     )
-    path.chmod(0o600)
+    if os.name != "nt":
+        path.chmod(0o600)
     return {
         "status": "configured",
         "config_path": str(path),
         "server_url": base_url,
         "api_key_configured": True,
-        "permissions": "0600",
+        "permissions": (
+            "user_profile_acl" if os.name == "nt" else "0600"
+        ),
         "next_command": "ora-workbench doctor",
     }
 
@@ -738,7 +814,8 @@ def _start_profile_handoff(
             start_new_session=True,
             close_fds=True,
         )
-    log_path.chmod(0o600)
+    if os.name != "nt":
+        log_path.chmod(0o600)
     # The child validates the production account before binding its loopback
     # port. Give a slow but healthy network enough time, while keeping each
     # readiness probe local and fast.

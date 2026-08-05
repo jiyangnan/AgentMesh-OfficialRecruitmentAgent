@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -20,6 +21,7 @@ def package_extension(
     output: Path,
     *,
     production: bool = False,
+    release_manifest: Path | None = None,
 ) -> dict[str, object]:
     manifest = source / "manifest.json"
     if not manifest.is_file():
@@ -65,13 +67,38 @@ def package_extension(
                     + "\n"
                 ).encode("utf-8")
             archive.writestr(info, payload)
-    return {
+    result = {
         "output": str(output),
         "version": metadata.get("version"),
         "production": production,
         "files": [path.relative_to(source).as_posix() for path in files],
         "bytes": output.stat().st_size,
     }
+    if release_manifest is not None:
+        release_manifest.parent.mkdir(parents=True, exist_ok=True)
+        release_manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "product": "officialrecruitment",
+                    "extension_version": metadata.get("version"),
+                    "artifact_path": (
+                        "/downloads/"
+                        "agentmesh-officialrecruitment-extension.zip"
+                    ),
+                    "artifact_sha256": hashlib.sha256(
+                        output.read_bytes()
+                    ).hexdigest(),
+                    "artifact_bytes": output.stat().st_size,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result["release_manifest"] = str(release_manifest)
+    return result
 
 
 def main() -> None:
@@ -83,11 +110,17 @@ def main() -> None:
         action="store_true",
         help="remove local development host permissions from the package",
     )
+    parser.add_argument("--release-manifest", type=Path)
     args = parser.parse_args()
     result = package_extension(
         args.source.expanduser().resolve(),
         args.output.expanduser().resolve(),
         production=args.production,
+        release_manifest=(
+            args.release_manifest.expanduser().resolve()
+            if args.release_manifest
+            else None
+        ),
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 

@@ -1,11 +1,48 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
+import sys
 from pathlib import Path
 
 import official_recruitment_agent.workbench_cli as cli_module
 import pytest
+
+
+def test_cli_reconfigures_redirected_windows_output_as_utf8(
+    monkeypatch,
+) -> None:
+    raw_output = io.BytesIO()
+    redirected_output = io.TextIOWrapper(
+        raw_output,
+        encoding="cp1252",
+    )
+    monkeypatch.setattr(sys, "stdout", redirected_output)
+
+    cli_module._ensure_utf8_standard_streams()
+    print("在 Windows 输出中文")
+    redirected_output.flush()
+
+    assert raw_output.getvalue().decode("utf-8").splitlines() == [
+        "在 Windows 输出中文"
+    ]
+
+
+def test_config_path_uses_native_windows_local_app_data(tmp_path: Path) -> None:
+    local_app_data = tmp_path / "AppData" / "Local"
+
+    assert cli_module._config_path(
+        platform_name="win32",
+        home=tmp_path,
+        environ={"LOCALAPPDATA": str(local_app_data)},
+    ) == (
+        local_app_data
+        / "AgentMesh360"
+        / "OfficialRecruitment"
+        / "config.json"
+    )
 
 
 def _test_workspace_ref(character: str) -> str:
@@ -108,6 +145,85 @@ def test_cli_help_identifies_adapter_instead_of_installed_agent(capsys) -> None:
     output = capsys.readouterr().out
     assert "CLI 适配器" in output
     assert "本机 Agent CLI" not in output
+
+
+def test_agent_prepares_extension_without_claiming_silent_chrome_install(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    extension_root = tmp_path / "extension"
+    calls = []
+
+    def fake_prepare(base_url, *, extension_root, force):
+        calls.append((base_url, extension_root, force))
+        return {
+            "status": "ready",
+            "healthy": True,
+            "extension_version": "0.6.4",
+            "install_directory": str(extension_root),
+            "changed": True,
+        }
+
+    monkeypatch.setattr(cli_module, "prepare_extension", fake_prepare)
+
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.test",
+            "extension",
+            "prepare",
+            "--install-dir",
+            str(extension_root),
+            "--no-open",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert calls == [
+        (
+            "https://recruit.agentmesh360.test",
+            extension_root,
+            False,
+        )
+    ]
+    assert payload["status"] == "ready"
+    assert "安装完成" not in json.dumps(payload, ensure_ascii=False)
+    assert payload["manual_steps"] == [
+        "在 Chrome 扩展管理页开启开发者模式。",
+        "点击加载已解压的扩展程序。",
+        f"选择目录：{extension_root}",
+    ]
+
+
+def test_extension_repair_forces_verified_redownload(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    extension_root = tmp_path / "extension"
+    calls = []
+
+    def fake_prepare(base_url, *, extension_root, force):
+        calls.append((base_url, extension_root, force))
+        return {"status": "ready", "healthy": True, "changed": True}
+
+    monkeypatch.setattr(cli_module, "prepare_extension", fake_prepare)
+
+    code = cli_module.main(
+        [
+            "extension",
+            "repair",
+            "--install-dir",
+            str(extension_root),
+            "--no-open",
+        ]
+    )
+
+    assert code == 0
+    assert calls[0][2] is True
+    assert json.loads(capsys.readouterr().out)["status"] == "ready"
 
 
 def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
@@ -372,10 +488,15 @@ def test_configure_persists_key_with_private_permissions_without_printing_it(
     assert code == 0
     output = capsys.readouterr().out
     assert key not in output
+    response = json.loads(output)
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert payload["api_key"] == key
     assert payload["base_url"] == "https://recruit.agentmesh360.com"
-    assert config_path.stat().st_mode & 0o777 == 0o600
+    if os.name == "nt":
+        assert response["permissions"] == "user_profile_acl"
+    else:
+        assert response["permissions"] == "0600"
+        assert config_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_doctor_uses_saved_account_and_reports_profile_readiness(
@@ -453,7 +574,8 @@ def test_doctor_uses_saved_account_and_reports_profile_readiness(
     )
     marker_text = continuity_path.read_text(encoding="utf-8")
     marker = json.loads(marker_text)
-    assert continuity_path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert continuity_path.stat().st_mode & 0o777 == 0o600
     assert marker["schema_version"] == 1
     assert marker["workspaces"][_test_workspace_ref("a")][
         "confirmed_profile_seen"

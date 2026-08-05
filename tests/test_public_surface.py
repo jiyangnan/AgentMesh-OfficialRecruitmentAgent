@@ -9,10 +9,12 @@ def test_public_repository_contains_only_client_surfaces() -> None:
     required = [
         "skills/agentmesh-officialrecruitment/SKILL.md",
         "src/official_recruitment_agent/local_profile_handoff.py",
+        "src/official_recruitment_agent/extension_delivery.py",
         "src/official_recruitment_agent/workbench_cli.py",
         "src/official_recruitment_agent/workbench/profile_contract.py",
         "extension/manifest.json",
         "installer/install-agent.sh",
+        "installer/install-agent.ps1",
     ]
     forbidden = [
         "Dockerfile",

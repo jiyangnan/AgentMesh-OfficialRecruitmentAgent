@@ -8,6 +8,7 @@ import re
 import secrets
 import sqlite3
 import stat
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,12 +49,33 @@ class LocalHandoffError(Exception):
         self.message = message
 
 
-def default_local_profile_path() -> Path:
-    override = os.getenv("ORA_LOCAL_PROFILE_DB")
+def default_local_profile_path(
+    *,
+    platform_name: str | None = None,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> Path:
+    environment = os.environ if environ is None else environ
+    override = environment.get("ORA_LOCAL_PROFILE_DB")
     if override:
         return Path(override).expanduser()
+    user_home = Path.home() if home is None else home
+    current_platform = platform_name or sys.platform
+    if current_platform == "win32":
+        local_app_data = environment.get("LOCALAPPDATA")
+        base = (
+            Path(local_app_data)
+            if local_app_data
+            else user_home / "AppData" / "Local"
+        )
+        return (
+            base
+            / "AgentMesh360"
+            / "OfficialRecruitment"
+            / "private-profile.sqlite3"
+        )
     return (
-        Path.home()
+        user_home
         / ".local"
         / "share"
         / "agentmesh360"
@@ -93,7 +115,8 @@ def _secure_private_file(path: Path, *, create: bool) -> None:
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise RuntimeError(f"本机资料库路径不是普通文件：{path}")
-        os.fchmod(descriptor, 0o600)
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
     finally:
         os.close(descriptor)
 

@@ -17,8 +17,16 @@ Codex、Claude Code、OpenClaw 等宿主 Agent。
 
 ## 一句话安装
 
+macOS / Linux：
+
 ```bash
 curl -fsSL https://recruit.agentmesh360.com/install-agent.sh | sh
+```
+
+Windows PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://recruit.agentmesh360.com/install-agent.ps1 | iex"
 ```
 
 这条命令安装的是 **Skill 与 CLI 适配器**，不会安装或创建另一个 AI Agent。
@@ -37,11 +45,25 @@ API Key 可在 [AgentMesh360 个人中心](https://agentmesh360.com/account/) �
 当前种子阶段使用开发者模式安装：
 
 ```bash
-ora-workbench extension-setup
+ora-workbench extension prepare
 ```
 
-命令会返回扩展包下载地址与图文安装说明。用户自行打开目标招聘官网和具体表单，
-再点击扩展中的“识别当前步骤”；本产品不要求系统预先穷举并定位所有招聘页面。
+命令会从 AgentMesh360 官方域名读取版本清单，校验扩展 ZIP 的大小与 SHA-256，解压到
+当前系统的固定用户目录，并尝试打开该目录和 Chrome 扩展管理页。macOS、Windows 和
+Linux 使用同一条命令。用户仍需亲自开启开发者模式并选择“加载已解压的扩展程序”，
+这是 Chrome 首次加载的明确确认步骤。
+
+后续可以由宿主 Agent 运行：
+
+```bash
+ora-workbench extension status
+ora-workbench extension update
+ora-workbench extension repair
+```
+
+更新始终使用同一个固定目录，完成后用户只需在扩展管理页点击“重新加载”。用户自行打开
+目标招聘官网和具体表单，再点击扩展中的“识别当前步骤”；本产品不要求系统预先穷举并
+定位所有招聘页面。
 
 扩展会先展示当前步骤的完整填写预览。用户逐项核对后，必须勾选“我已核对以上预览”，
 “确认填写”才会变为可用。扩展只把经过页面稳定回读的字段记为成功；页面拒绝的值会

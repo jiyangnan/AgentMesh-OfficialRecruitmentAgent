@@ -100,13 +100,19 @@ the source suffix and a SHA-256 digest.
 
 After a confirmed profile exists:
 
-1. Run `ora-workbench extension-setup` when the user needs installation help.
-2. The user opens and logs in to a recruitment website themselves.
-3. The user clicks the extension to inspect the current visible step.
-4. The extension previews mappings before filling reversible ordinary fields.
-5. After every inspection or fill, run `ora-workbench profile-questions`
+1. Run `ora-workbench extension status`. If it returns `not_installed`, run
+   `ora-workbench extension prepare`; if it returns `repair_required`, run
+   `ora-workbench extension repair`. These commands use native fixed user
+   directories on macOS, Windows, and Linux.
+2. Relay the returned `manual_steps` exactly. Chrome still requires the user to
+   enable developer mode and load the prepared directory themselves; never
+   claim that the extension was silently installed.
+3. The user opens and logs in to a recruitment website themselves.
+4. The user clicks the extension to inspect the current visible step.
+5. The extension previews mappings before filling reversible ordinary fields.
+6. After every inspection or fill, run `ora-workbench profile-questions`
    before reporting the current step complete or directing the user onward.
-6. The user handles files, declarations, CAPTCHA, next-step navigation and
+7. The user handles files, declarations, CAPTCHA, next-step navigation and
    final submission.
 7. The extension writes bounded evidence back to the same application shown in
    Web.

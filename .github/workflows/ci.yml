@@ -43,6 +43,7 @@ jobs:
           python scripts/package_extension.py \
             --source extension \
             --output dist/agentmesh-officialrecruitment-extension.zip \
+            --release-manifest dist/agentmesh-officialrecruitment-extension-release.json \
             --production
 
       - name: 拒绝私有服务端路径
@@ -51,3 +52,124 @@ jobs:
           test ! -e web/src
           test ! -e src/official_recruitment_agent/workbench/api.py
           test ! -e src/official_recruitment_agent/workbench/service.py
+
+  windows-client:
+    name: Windows 客户端与 PowerShell
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: 安装与测试
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m compileall -q src tests
+          python -m pytest
+
+      - name: 解析 PowerShell 安装器
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "installer/install-agent.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: 真实执行 Windows 安装与扩展准备
+        shell: pwsh
+        run: |
+          $Site = Join-Path $env:RUNNER_TEMP "site"
+          $Downloads = Join-Path $Site "downloads"
+          $SkillDownload = Join-Path $Downloads "agentmesh-officialrecruitment-skill"
+          New-Item -ItemType Directory -Force -Path $Downloads, $SkillDownload | Out-Null
+
+          python -m pip wheel --no-deps --wheel-dir $Downloads .
+          $Wheel = Get-ChildItem $Downloads -Filter "official_recruitment_agent-*.whl" |
+            Select-Object -First 1
+          if (-not $Wheel) {
+            throw "公开客户端 wheel 未生成。"
+          }
+          Copy-Item $Wheel.FullName (Join-Path $Downloads "official-recruitment-agent.whl")
+          Copy-Item `
+            "skills\agentmesh-officialrecruitment\SKILL.md" `
+            (Join-Path $SkillDownload "SKILL.md")
+          python scripts/package_extension.py `
+            --source extension `
+            --output (Join-Path $Downloads "agentmesh-officialrecruitment-extension.zip") `
+            --release-manifest (Join-Path $Downloads "agentmesh-officialrecruitment-extension-release.json") `
+            --production
+
+          $Port = 18127
+          $HttpServer = Start-Process python `
+            -ArgumentList @(
+              "-m", "http.server", "$Port", "--bind", "127.0.0.1",
+              "--directory", $Site
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+          try {
+            $Ready = $false
+            for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing `
+                  -Uri "http://127.0.0.1:$Port/downloads/official-recruitment-agent.whl" `
+                  -Method Head | Out-Null
+                $Ready = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 250
+              }
+            }
+            if (-not $Ready) {
+              throw "Windows 安装测试服务未就绪。"
+            }
+
+            $env:ORA_INSTALL_BASE_URL = "http://127.0.0.1:$Port"
+            $env:ORA_AGENT_HOME = Join-Path $env:RUNNER_TEMP "ora-agent-home"
+            $env:ORA_BIN_DIR = Join-Path $env:RUNNER_TEMP "ora-bin"
+            $env:ORA_SKILLS_DIR = Join-Path $env:RUNNER_TEMP "ora-skills"
+            & (Resolve-Path "installer\install-agent.ps1")
+
+            $Cli = Join-Path $env:ORA_AGENT_HOME "venv\Scripts\ora-workbench.exe"
+            $ExtensionDir = Join-Path $env:LOCALAPPDATA `
+              "AgentMesh360\OfficialRecruitment\extension-ci"
+            if (-not (Test-Path $Cli)) {
+              throw "Windows CLI 安装结果不存在。"
+            }
+            if (-not (Test-Path (Join-Path $env:ORA_BIN_DIR "ora-workbench.cmd"))) {
+              throw "Windows CLI 命令入口不存在。"
+            }
+            if (-not (Test-Path (Join-Path $env:ORA_SKILLS_DIR "agentmesh-officialrecruitment\SKILL.md"))) {
+              throw "Windows Skill 安装结果不存在。"
+            }
+
+            & $Cli `
+              --base-url "http://127.0.0.1:$Port" `
+              extension prepare `
+              --install-dir $ExtensionDir `
+              --no-open
+            if ($LASTEXITCODE -ne 0) {
+              throw "Windows 扩展准备失败。"
+            }
+            $Status = (& $Cli extension status --install-dir $ExtensionDir) |
+              ConvertFrom-Json
+            if (-not $Status.healthy -or $Status.status -ne "ready") {
+              throw "Windows 扩展状态未达到 ready。"
+            }
+            if ($Status.platform -ne "windows") {
+              throw "Windows 扩展状态平台标识错误。"
+            }
+          } finally {
+            Stop-Process -Id $HttpServer.Id -Force -ErrorAction SilentlyContinue
+          }
