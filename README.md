@@ -87,14 +87,6 @@ python scripts/package_extension.py \
   --production
 ```
 
-## 仓库关系
-
-- 本仓库：公开客户端分发，仅包含 Skill、CLI 适配器、本机私密资料交接与资料库、
-  Chrome 扩展和用户文档；
-- `official-recruitment-agent`：私有内部研发源仓，先实现和验证完整产品能力；
-- `official-recruitment-server`：私有产品服务、Web、数据库、状态机和部署；
-- `agentmesh-core`：AgentMesh360 共享账号、订阅、积分、通用 API Key 与产品注册。
-
 ## License
 
 Apache License 2.0。

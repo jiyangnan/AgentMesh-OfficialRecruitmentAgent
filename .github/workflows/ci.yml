@@ -21,6 +21,15 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      - name: 拒绝公开内部仓库拓扑
+        run: |
+          if git grep -nE '^#{1,6}[[:space:]]+(仓库关系|多仓关系|仓库拓扑)$'; then
+            exit 1
+          fi
+          if git grep -nE 'github\.com/jiyangnan/' | grep -v 'AgentMesh-OfficialRecruitmentAgent'; then
+            exit 1
+          fi
+
       - name: 安装与测试
         run: |
           python -m pip install --upgrade pip
