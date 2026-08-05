@@ -9,7 +9,7 @@ BIN_DIR="${ORA_BIN_DIR:-$HOME/.local/bin}"
 SKILLS_ROOT="${ORA_SKILLS_DIR:-$HOME/.agents/skills}"
 SKILL_DIR="$SKILLS_ROOT/agentmesh-officialrecruitment"
 WORK_DIR="$(mktemp -d)"
-WHEEL="$WORK_DIR/official_recruitment_agent-0.1.1-py3-none-any.whl"
+WHEEL="$WORK_DIR/official_recruitment_agent-0.1.2-py3-none-any.whl"
 SKILL_FILE="$WORK_DIR/SKILL.md"
 
 cleanup() {

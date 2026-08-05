@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import sqlite3
+import stat
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -68,6 +69,35 @@ def _hash_capability(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _secure_private_file(path: Path, *, create: bool) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if create:
+        try:
+            descriptor = os.open(
+                path,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_CLOEXEC", 0)
+                | nofollow,
+                0o600,
+            )
+        except FileExistsError:
+            descriptor = os.open(path, flags | nofollow)
+    else:
+        try:
+            descriptor = os.open(path, flags | nofollow)
+        except FileNotFoundError:
+            return
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise RuntimeError(f"本机资料库路径不是普通文件：{path}")
+        os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
+
+
 def _json_object(value: bytes) -> dict[str, Any]:
     try:
         payload = json.loads(value)
@@ -89,15 +119,35 @@ def _json_object(value: bytes) -> dict[str, Any]:
 class LocalProfileStore:
     def __init__(self, path: Path) -> None:
         self.path = path.expanduser()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._secure_sqlite_files(create_database=True)
         self._create_schema()
 
     def _connect(self) -> sqlite3.Connection:
+        # Pre-create SQLite sidecars privately so there is no readable window
+        # between SQLite opening them and the post-connect permission repair.
+        self._secure_sqlite_files(create_database=True, prepare_wal=True)
         connection = sqlite3.connect(self.path, timeout=5)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
+        self._secure_sqlite_files(create_database=False)
         return connection
+
+    def _secure_sqlite_files(
+        self,
+        *,
+        create_database: bool,
+        prepare_wal: bool = False,
+    ) -> None:
+        paths = (
+            (self.path, create_database),
+            (Path(f"{self.path}-wal"), prepare_wal),
+            (Path(f"{self.path}-shm"), prepare_wal),
+            (Path(f"{self.path}-journal"), False),
+        )
+        for path, create in paths:
+            _secure_private_file(path, create=create)
 
     def _create_schema(self) -> None:
         with self._connect() as connection:
@@ -142,7 +192,7 @@ class LocalProfileStore:
                 );
                 """
             )
-        self.path.chmod(0o600)
+        self._secure_sqlite_files(create_database=True)
 
     def create_proposal(
         self,
