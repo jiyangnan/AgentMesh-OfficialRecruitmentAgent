@@ -147,6 +147,55 @@ def test_cli_help_identifies_adapter_instead_of_installed_agent(capsys) -> None:
     assert "本机 Agent CLI" not in output
 
 
+def test_extension_setup_exposes_store_and_direct_download_channels(
+    capsys,
+) -> None:
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.test",
+            "extension-setup",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["chrome_web_store_url"].endswith(
+        "fbgfhigphgmacnhgeomdjemfomhnjaai"
+    )
+    assert payload["download_url"] == (
+        "https://recruit.agentmesh360.test/downloads/"
+        "agentmesh-officialrecruitment-extension.zip"
+    )
+    assert payload["recommended_command"] == (
+        "ora-workbench extension host install"
+    )
+
+
+def test_extension_host_install_is_a_separate_idempotent_command(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda *, extension_root: (
+            calls.append(extension_root)
+            or {
+                "status": "ready",
+                "extension_id": "fbgfhigphgmacnhgeomdjemfomhnjaai",
+            }
+        ),
+    )
+
+    code = cli_module.main(["extension", "host", "install"])
+
+    assert code == 0
+    assert len(calls) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "ready"
+
+
 def test_agent_prepares_extension_without_claiming_silent_chrome_install(
     monkeypatch,
     capsys,
@@ -166,6 +215,20 @@ def test_agent_prepares_extension_without_claiming_silent_chrome_install(
         }
 
     monkeypatch.setattr(cli_module, "prepare_extension", fake_prepare)
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda *, extension_root: {
+            "status": "ready",
+            "installation_id": f"orainstall_{'a' * 32}",
+            "manifest_path": str(tmp_path / "native-host.json"),
+        },
+    )
     monkeypatch.setattr(
         cli_module,
         "_start_profile_handoff",
@@ -223,6 +286,19 @@ def test_extension_repair_forces_verified_redownload(
         return {"status": "ready", "healthy": True, "changed": True}
 
     monkeypatch.setattr(cli_module, "prepare_extension", fake_prepare)
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda *, extension_root: {
+            "status": "ready",
+            "installation_id": f"orainstall_{'a' * 32}",
+        },
+    )
 
     code = cli_module.main(
         [
@@ -322,6 +398,11 @@ def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
         "_config_path",
         lambda: tmp_path / "official-recruitment.json",
     )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
     args = cli_module.argparse.Namespace(
         base_url="https://recruit.agentmesh360.com",
         api_key="agentmesh_live_test-key",
@@ -352,7 +433,7 @@ def test_extension_update_restarts_outdated_local_handoff(
     )
     monkeypatch.setattr(
         cli_module,
-        "load_extension_pairing",
+        "ensure_extension_pairing",
         lambda _root: {"installation_id": installation_id},
     )
 

@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
+from official_recruitment_agent.extension_identity import (
+    OFFICIAL_CHROME_EXTENSION_ID,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _extension_id(public_key: str) -> str:
+    digest = hashlib.sha256(base64.b64decode(public_key)).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(value, 16)) for value in digest)
 
 
 def test_extension_package_is_installable_and_contains_no_secret(
@@ -30,7 +41,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
     )
     summary = json.loads(completed.stdout)
 
-    assert summary["version"] == "0.6.5"
+    assert summary["version"] == "0.6.6"
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
@@ -48,9 +59,13 @@ def test_extension_package_is_installable_and_contains_no_secret(
     assert manifest["manifest_version"] == 3
     assert manifest["permissions"] == [
         "activeTab",
+        "nativeMessaging",
         "scripting",
         "storage",
     ]
+    assert manifest["key"]
+    assert manifest["name"] == "AgentMesh-OfficialRecruitment"
+    assert _extension_id(manifest["key"]) == OFFICIAL_CHROME_EXTENSION_ID
     assert manifest["host_permissions"] == [
         "http://127.0.0.1:8765/*",
         "https://agentmesh360.com/*",
@@ -84,7 +99,8 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
         'official_recruitment_agent-$ADAPTER_VERSION-py3-none-any.whl"'
         in installer
     )
-    assert 'ADAPTER_VERSION="0.1.4"' in installer
+    assert 'ADAPTER_VERSION="0.1.5"' in installer
+    assert 'extension host install' in installer
     assert '"$VENV/bin/python" -m pip install' in installer
     assert "AGENTMESH_API_KEY=" not in installer
     assert "jobagent_live_" not in installer
@@ -99,7 +115,8 @@ def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
     assert "AgentMesh360\\OfficialRecruitment" in installer
     assert "Scripts\\ora-workbench.exe" in installer
     assert "ora-workbench.cmd" in installer
-    assert '$AdapterVersion = "0.1.4"' in installer
+    assert '$AdapterVersion = "0.1.5"' in installer
+    assert 'extension host install' in installer
     assert (
         'official_recruitment_agent-$AdapterVersion-py3-none-any.whl'
         in installer

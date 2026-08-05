@@ -24,6 +24,7 @@ EXTENSION_RELEASE_PATH = (
 EXTENSION_STATE_SCHEMA_VERSION = 2
 EXTENSION_PAIRING_SCHEMA_VERSION = 1
 EXTENSION_PAIRING_FILE = "agentmesh-installation.json"
+EXTENSION_PAIRING_STATE_FILE = "extension-pairing.json"
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 256
@@ -84,6 +85,10 @@ def extension_state_path(extension_root: Path) -> Path:
     return extension_root.parent / "extension-install.json"
 
 
+def extension_pairing_state_path(extension_root: Path) -> Path:
+    return extension_root.parent / EXTENSION_PAIRING_STATE_FILE
+
+
 def _new_extension_pairing() -> dict[str, Any]:
     return {
         "schema_version": EXTENSION_PAIRING_SCHEMA_VERSION,
@@ -125,9 +130,58 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _write_private_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        if os.name != "nt":
+            temporary.chmod(0o600)
+        os.replace(temporary, path)
+        if os.name != "nt":
+            path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def load_private_extension_pairing(
+    extension_root: Path,
+) -> dict[str, Any]:
+    try:
+        return _validate_extension_pairing(
+            _read_json_object(
+                extension_pairing_state_path(extension_root.expanduser())
+            )
+        )
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        ExtensionDeliveryError,
+    ) as exc:
+        raise ExtensionDeliveryError(
+            "扩展本机连接资料缺失，请让 Agent 重新建立浏览器连接组件。"
+        ) from exc
+
+
+def ensure_extension_pairing(extension_root: Path) -> dict[str, Any]:
+    root = extension_root.expanduser()
+    try:
+        return load_private_extension_pairing(root)
+    except ExtensionDeliveryError:
+        pairing = _existing_legacy_extension_pairing(root)
+        _write_private_json(extension_pairing_state_path(root), pairing)
+        return pairing
+
+
 def load_extension_pairing(extension_root: Path) -> dict[str, Any]:
     root = extension_root.expanduser()
     try:
+        private_pairing = ensure_extension_pairing(root)
         state = _read_json_object(extension_state_path(root))
         if state.get("schema_version") != EXTENSION_STATE_SCHEMA_VERSION:
             raise ValueError("state_schema")
@@ -135,7 +189,10 @@ def load_extension_pairing(extension_root: Path) -> dict[str, Any]:
         descriptor_pairing = _validate_extension_pairing(
             _read_json_object(root / EXTENSION_PAIRING_FILE)
         )
-        if state_pairing != descriptor_pairing:
+        if (
+            state_pairing != descriptor_pairing
+            or state_pairing != private_pairing
+        ):
             raise ValueError("pairing_mismatch")
         return state_pairing
     except (
@@ -149,7 +206,9 @@ def load_extension_pairing(extension_root: Path) -> dict[str, Any]:
         ) from exc
 
 
-def _existing_extension_pairing(extension_root: Path) -> dict[str, Any]:
+def _existing_legacy_extension_pairing(
+    extension_root: Path,
+) -> dict[str, Any]:
     try:
         state = _read_json_object(extension_state_path(extension_root))
         return _validate_extension_pairing(state.get("pairing"))
@@ -170,6 +229,10 @@ def _existing_extension_pairing(extension_root: Path) -> dict[str, Any]:
             ExtensionDeliveryError,
         ):
             return _new_extension_pairing()
+
+
+def _existing_extension_pairing(extension_root: Path) -> dict[str, Any]:
+    return ensure_extension_pairing(extension_root)
 
 
 def _write_pairing_descriptor(
@@ -382,22 +445,7 @@ def _read_extension_version(root: Path) -> str:
 
 
 def _write_state(extension_root: Path, state: dict[str, Any]) -> None:
-    path = extension_state_path(extension_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        if os.name != "nt":
-            temporary.chmod(0o600)
-        os.replace(temporary, path)
-        if os.name != "nt":
-            path.chmod(0o600)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    _write_private_json(extension_state_path(extension_root), state)
 
 
 def extension_status(extension_root: Path) -> dict[str, Any]:

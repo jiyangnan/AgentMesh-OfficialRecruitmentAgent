@@ -18,10 +18,17 @@ from uuid import uuid4
 from official_recruitment_agent.extension_delivery import (
     ExtensionDeliveryError,
     default_extension_root,
+    ensure_extension_pairing,
     extension_status,
-    load_extension_pairing,
     open_extension_setup,
     prepare_extension,
+)
+from official_recruitment_agent.extension_identity import (
+    OFFICIAL_CHROME_WEB_STORE_URL,
+)
+from official_recruitment_agent.native_messaging import (
+    install_native_messaging_host,
+    native_messaging_host_status,
 )
 
 from official_recruitment_agent.workbench.profile_contract import (
@@ -363,6 +370,13 @@ def build_parser() -> argparse.ArgumentParser:
         extension_action.add_argument("--no-open", action="store_true")
     extension_status_parser = extension_commands.add_parser("status")
     extension_status_parser.add_argument("--install-dir", type=Path)
+    extension_host = extension_commands.add_parser("host")
+    extension_host_commands = extension_host.add_subparsers(
+        dest="extension_host_command",
+        required=True,
+    )
+    extension_host_commands.add_parser("install")
+    extension_host_commands.add_parser("status")
     subparsers.add_parser("profile-schema")
     handoff = subparsers.add_parser("profile-handoff")
     handoff_commands = handoff.add_subparsers(
@@ -449,23 +463,38 @@ def main(argv: list[str] | None = None) -> int:
                     + "/downloads/"
                     "agentmesh-officialrecruitment-extension.zip"
                 ),
+                "chrome_web_store_url": OFFICIAL_CHROME_WEB_STORE_URL,
                 "install_guide_url": (
                     args.base_url.rstrip("/")
                     + "/guides/install-browser-extension/"
                 ),
                 "instructions": [
-                    "让本机 Agent 准备并校验扩展包。",
-                    "在 chrome://extensions 开启开发者模式。",
-                    "选择加载已解压的扩展程序。",
+                    "优先从 Chrome Web Store 安装官方扩展。",
+                    "无法访问商店时，从工作台下载 ZIP 并按指南加载。",
                     "打开扩展并点击连接本机 Agent，无需再次输入 API Key。",
                 ],
-                "recommended_command": "ora-workbench extension prepare",
+                "recommended_command": "ora-workbench extension host install",
             }
         elif args.command == "extension":
-            extension_root = args.install_dir or default_extension_root()
-            if args.extension_command == "status":
+            extension_root = (
+                getattr(args, "install_dir", None)
+                or default_extension_root()
+            )
+            if args.extension_command == "host":
+                if args.extension_host_command == "install":
+                    result = install_native_messaging_host(
+                        extension_root=extension_root,
+                    )
+                else:
+                    result = native_messaging_host_status()
+            elif args.extension_command == "status":
                 result = extension_status(extension_root)
+                result["native_host"] = native_messaging_host_status()
             else:
+                ensure_extension_pairing(extension_root)
+                native_host = install_native_messaging_host(
+                    extension_root=extension_root,
+                )
                 result = prepare_extension(
                     args.base_url,
                     extension_root=extension_root,
@@ -473,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if not args.no_open:
                     result["opened"] = open_extension_setup(extension_root)
+                result["native_host"] = native_host
                 if args.api_key and not args.base_url.startswith(
                     ("http://127.0.0.1:", "http://localhost:")
                 ):
@@ -749,7 +779,7 @@ def _local_handoff_service(
 ) -> LocalHandoffService:
     product, workspace_ref = _product_and_workspace(args)
     try:
-        extension_pairing = load_extension_pairing(
+        extension_pairing = ensure_extension_pairing(
             default_extension_root()
         )
     except ExtensionDeliveryError:
@@ -937,11 +967,10 @@ def _start_profile_handoff(
     extension_root: Path | None = None,
 ) -> dict[str, Any]:
     _, workspace_ref = _product_and_workspace(args)
-    expected_installation_id = None
-    if extension_root is not None:
-        expected_installation_id = load_extension_pairing(
-            extension_root
-        )["installation_id"]
+    pairing_root = extension_root or default_extension_root()
+    expected_installation_id = ensure_extension_pairing(
+        pairing_root
+    )["installation_id"]
     current = None
     try:
         current = _query_local_handoff(args, workspace_ref)

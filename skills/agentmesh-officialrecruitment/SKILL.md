@@ -100,16 +100,16 @@ the source suffix and a SHA-256 digest.
 
 After a confirmed profile exists:
 
-1. Run `ora-workbench extension prepare` every time the user enters the
-   extension workflow. It is idempotent: a healthy install is reused, while
-   missing files and pairing state are prepared in the same fixed user
-   directory on macOS, Windows, and Linux. If the command itself directs a
-   repair, run `ora-workbench extension repair`. Continue only when
-   `local_agent` reports `status: ready`, `workspace_match: true` and
-   `extension_connection_supported: true`.
-2. Relay the returned `manual_steps` exactly. Chrome still requires the user to
-   enable developer mode and load the prepared directory themselves; never
-   claim that the extension was silently installed.
+1. Run `ora-workbench extension host status`. If the native connector is not
+   ready, run `ora-workbench extension host install`; never ask the user to
+   copy an API Key or local pairing secret into the extension.
+2. Let the user choose the official delivery channel exposed by the Web
+   workbench: Chrome Web Store when it is published and reachable, or the
+   official ZIP download when the store is unavailable. For ZIP users who want
+   Agent-assisted preparation, run `ora-workbench extension prepare`; if it
+   directs a repair, run `ora-workbench extension repair`, and relay the
+   returned `manual_steps` exactly. Never claim Chrome silently installed an
+   extension or that a store item is available before publication.
 3. The user opens the extension and clicks `连接本机 Agent` once. Do not ask
    them to find, copy or paste an API Key into the extension. The universal Key
    remains only in the local Agent configuration; the extension stores a

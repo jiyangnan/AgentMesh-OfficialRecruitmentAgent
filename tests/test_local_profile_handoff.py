@@ -12,6 +12,9 @@ from pathlib import Path
 import pytest
 
 import official_recruitment_agent.local_profile_handoff as handoff_module
+from official_recruitment_agent.extension_identity import (
+    OFFICIAL_CHROME_EXTENSION_ORIGIN,
+)
 from official_recruitment_agent.local_profile_handoff import (
     LocalHandoffError,
     LocalHandoffService,
@@ -27,7 +30,7 @@ SENTINEL = "ORA-PRIVATE-SENTINEL-20260804"
 WORKSPACE_REF = "ws_0123456789abcdef0123456789abcdef"
 FILL_TASK_ID = "fill_0123456789abcdef01234567"
 QUESTION_ID = "pq_aaaaaaaaaaaaaaaaaaaaaaaa"
-EXTENSION_ORIGIN = f"chrome-extension://{'a' * 32}"
+EXTENSION_ORIGIN = OFFICIAL_CHROME_EXTENSION_ORIGIN
 INSTALLATION_ID = f"orainstall_{'b' * 32}"
 PAIRING_SECRET = f"orapair_{'c' * 43}"
 

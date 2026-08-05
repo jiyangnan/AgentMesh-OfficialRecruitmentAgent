@@ -20,6 +20,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlsplit
 from urllib.request import Request, urlopen
 
+from official_recruitment_agent.extension_identity import (
+    OFFICIAL_CHROME_EXTENSION_ORIGIN,
+)
+
 
 LOCAL_HANDOFF_HOST = "127.0.0.1"
 LOCAL_HANDOFF_PORT = 8765
@@ -38,7 +42,6 @@ ALLOWED_WEB_ORIGINS = frozenset(
         "http://localhost:8010",
     }
 )
-_CHROME_EXTENSION_ORIGIN = re.compile(r"^chrome-extension://[a-p]{32}$")
 _QUESTION_ID = re.compile(r"^pq_[0-9a-f]{24}$")
 _INSTALLATION_ID = re.compile(r"^orainstall_[0-9a-f]{32}$")
 _PAIRING_SECRET = re.compile(r"^orapair_[A-Za-z0-9_-]{32,96}$")
@@ -251,7 +254,10 @@ class LocalProfileStore:
                 "invalid_extension_installation",
                 "扩展安装编号无效，请让本机 Agent 修复扩展。",
             )
-        if not _CHROME_EXTENSION_ORIGIN.fullmatch(extension_origin):
+        if not hmac.compare_digest(
+            extension_origin,
+            OFFICIAL_CHROME_EXTENSION_ORIGIN,
+        ):
             raise LocalHandoffError(
                 HTTPStatus.FORBIDDEN,
                 "invalid_extension_origin",
@@ -1304,7 +1310,10 @@ def create_handler(
             origin = (self.headers.get("Origin") or "").strip()
             allowed = (
                 origin in ALLOWED_WEB_ORIGINS
-                or bool(_CHROME_EXTENSION_ORIGIN.fullmatch(origin))
+                or hmac.compare_digest(
+                    origin,
+                    OFFICIAL_CHROME_EXTENSION_ORIGIN,
+                )
             )
             if required and not allowed:
                 raise LocalHandoffError(
@@ -1389,7 +1398,10 @@ def create_handler(
             origin = (self.headers.get("Origin") or "").strip()
             if not (
                 origin in ALLOWED_WEB_ORIGINS
-                or _CHROME_EXTENSION_ORIGIN.fullmatch(origin)
+                or hmac.compare_digest(
+                    origin,
+                    OFFICIAL_CHROME_EXTENSION_ORIGIN,
+                )
             ):
                 origin = "https://recruit.agentmesh360.com"
             self._send_json(

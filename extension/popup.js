@@ -16,6 +16,7 @@ const AUTO_CONNECT_DISABLED_STORAGE_KEY =
   "ora_local_auto_connect_disabled_v1";
 const LOCAL_AGENT_URL = "http://127.0.0.1:8765";
 const INSTALLATION_DESCRIPTOR_FILE = "agentmesh-installation.json";
+const NATIVE_MESSAGING_HOST = "com.agentmesh360.officialrecruitment";
 const LOCAL_DEVELOPMENT_SERVERS = [
   "http://127.0.0.1:8010",
   "http://127.0.0.1:8000",
@@ -288,13 +289,14 @@ async function persistLocalAgentConnection(result) {
       installation_id: result.installation_id,
       expires_at: result.expires_at,
     },
+    [INSTALLATION_STORAGE_KEY]: result.installation_id,
   });
   await chrome.storage.local.remove(AUTO_CONNECT_DISABLED_STORAGE_KEY);
   connection.textContent = connectionLabel();
   connectedUi(true);
 }
 
-async function connectLocalAgent() {
+async function connectLocalAgentWithDescriptor() {
   const descriptor = await installationDescriptor();
   const result = await localAgentRequest("/v1/extension/connect", {
     installation_id: descriptor.installation_id,
@@ -304,6 +306,49 @@ async function connectLocalAgent() {
     throw new Error("本机 Agent 返回了其他扩展的连接。");
   }
   await persistLocalAgentConnection(result);
+}
+
+async function connectLocalAgentWithNativeHost() {
+  if (!chrome.runtime?.sendNativeMessage) {
+    throw new Error(
+      "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。",
+    );
+  }
+  let result;
+  try {
+    result = await chrome.runtime.sendNativeMessage(
+      NATIVE_MESSAGING_HOST,
+      {
+        contract_version: "officialrecruitment-native-v1",
+        action: "connect",
+      },
+    );
+  } catch {
+    throw new Error(
+      "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。",
+    );
+  }
+  if (result?.status === "error") {
+    throw new Error(
+      result?.error?.message ?? "本机 Agent 暂时无法完成浏览器连接。",
+    );
+  }
+  await persistLocalAgentConnection(result);
+}
+
+async function connectLocalAgent() {
+  let nativeError = null;
+  try {
+    await connectLocalAgentWithNativeHost();
+    return;
+  } catch (error) {
+    nativeError = error;
+  }
+  try {
+    await connectLocalAgentWithDescriptor();
+  } catch {
+    throw nativeError;
+  }
 }
 
 async function activeTab() {

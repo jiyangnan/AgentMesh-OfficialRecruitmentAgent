@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>安装 AgentMesh-OfficialRecruitment 浏览器扩展</title>
-  <meta name="description" content="种子用户通过 Chrome 开发者模式安装 AgentMesh-OfficialRecruitment 官网申请填写器的完整步骤。" />
+  <meta name="description" content="通过 Chrome Web Store 或 AgentMesh360 官方 ZIP 安装 AgentMesh-OfficialRecruitment 浏览器扩展。" />
   <meta name="robots" content="noindex,nofollow" />
   <link rel="canonical" href="https://recruit.agentmesh360.com/guides/install-browser-extension/" />
   <link rel="icon" type="image/svg+xml" href="/workbench-icon.svg" />
@@ -23,45 +23,61 @@
   <main>
     <section class="hero">
       <div class="container">
-        <p class="eyebrow">Early Access · Chrome 扩展安装</p>
-        <h1>让本机 Agent 准备扩展，你只完成 Chrome 确认。</h1>
-        <p class="lead">当前种子用户版本暂不通过 Chrome Web Store 分发。macOS、Windows 和 Linux 使用同一条扩展准备命令；下载、摘要校验、解压和固定目录由本机 Agent 完成。</p>
+        <p class="eyebrow">AgentMesh360 · Chrome 扩展安装</p>
+        <h1>根据你的网络条件，选择合适的官方安装方式。</h1>
+        <p class="lead">能够访问 Chrome Web Store 的用户使用商店安装并自动更新；无法访问商店的中国大陆用户，可从 AgentMesh360 工作台直接下载同一官方版本的 ZIP。</p>
         <div class="hero-actions">
-          <a class="button primary" href="#steps">开始安装</a>
+          <a class="button primary" href="#direct-download">下载官方 ZIP</a>
+          <a class="button secondary" href="#store-install">查看商店安装</a>
         </div>
       </div>
     </section>
     <article class="container article">
-      <section id="steps">
-        <h2>首次安装</h2>
+      <section>
+        <h2>共同前置条件</h2>
         <ol class="checklist">
           <li><strong>先接入本机 Agent。</strong>macOS 或 Linux 使用官网的 <code>curl ... install-agent.sh | sh</code> 命令；Windows PowerShell 使用 <code>powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://recruit.agentmesh360.com/install-agent.ps1 | iex"</code>。</li>
-          <li><strong>让 Agent 准备扩展。</strong>本机 Agent 运行 <code>ora-workbench extension prepare</code>，自动下载官方版本清单和 ZIP，校验大小与 SHA-256，再解压到当前系统的固定目录。</li>
-          <li><strong>确认已打开两个位置。</strong>命令会尝试打开扩展固定目录和 <code>chrome://extensions/</code>；未能自动打开时，Agent 会返回完整目录。</li>
+          <li><strong>本机连接组件会随 CLI 一起注册。</strong>无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。</li>
+        </ol>
+      </section>
+      <section id="store-install">
+        <h2>方式一：Chrome Web Store</h2>
+        <p>适合海外用户和能够访问 Chrome Web Store 的用户。商店版本审核通过后，工作台会开放正式入口；安装后可由 Chrome 自动接收后续更新。</p>
+        <div class="callout"><strong>当前状态：商店审核中。</strong>审核完成前请使用下方的官方 ZIP。工作台不会把尚未公开的商店页面伪装成可用入口。</div>
+      </section>
+      <section id="direct-download">
+        <h2>方式二：工作台直接下载官方 ZIP</h2>
+        <p>适合无法访问 Chrome Web Store 的中国大陆用户。macOS、Windows 和 Linux 使用同一份扩展 ZIP。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="/downloads/agentmesh-officialrecruitment-extension.zip" download>下载官方扩展 ZIP</a>
+          <a class="button secondary" href="/downloads/agentmesh-officialrecruitment-extension-release.json" target="_blank" rel="noreferrer">查看版本与 SHA-256</a>
+        </div>
+        <ol class="checklist">
+          <li><strong>下载并解压。</strong>把 ZIP 解压到一个固定文件夹，不要直接选择 ZIP，也不要之后随意移动或删除该文件夹。</li>
+          <li><strong>打开扩展管理页。</strong>在 Chrome 地址栏输入 <code>chrome://extensions/</code>。</li>
           <li><strong>开启开发者模式。</strong>打开扩展管理页右上角的“开发者模式”开关。</li>
           <li><strong>加载扩展。</strong>点击“加载已解压的扩展程序”。</li>
-          <li><strong>选择 Agent 返回的目录。</strong>该目录直接包含 <code>manifest.json</code>、<code>popup.html</code> 和 <code>executor.js</code>。不要选择 ZIP，也不要选择它外面多一层的父目录。</li>
-          <li><strong>固定到工具栏。</strong>点击 Chrome 工具栏的扩展图标，把“AgentMesh360 官网申请填写器”固定到工具栏。</li>
-          <li><strong>连接本机 Agent。</strong>打开扩展并点击“连接本机 Agent”。工作台地址和账户 Key 已由本机 Agent 配置，扩展不会要求再次寻找、复制或粘贴。</li>
+          <li><strong>选择解压目录。</strong>该目录必须直接包含 <code>manifest.json</code>、<code>popup.html</code> 和 <code>executor.js</code>。不要选择它外面多一层的父目录。</li>
+          <li><strong>固定到工具栏。</strong>点击 Chrome 工具栏的扩展图标，把“AgentMesh-OfficialRecruitment”固定到工具栏。</li>
+          <li><strong>连接本机 Agent。</strong>打开扩展并点击“连接本机 Agent”。扩展不会要求输入 API Key 或配对码。</li>
           <li><strong>打开真实报名页面。</strong>你不需要先回 Web 创建任务。自行打开并登录目标招聘官网，进入当前可见的报名步骤，再点击扩展中的“识别当前步骤”。</li>
         </ol>
-        <div class="callout"><strong>固定目录由产品维护。</strong>macOS 使用“资源库/Application Support”，Windows 使用 <code>%LOCALAPPDATA%</code>，Linux 使用用户数据目录。不要手动移动该目录；误删或损坏后让 Agent 运行 <code>ora-workbench extension repair</code>。</div>
+        <div class="callout"><strong>需要自动修复时交给 Agent。</strong>也可以让本机 Agent 运行 <code>ora-workbench extension prepare</code>，它会校验官方版本并准备固定目录；误删或损坏后运行 <code>ora-workbench extension repair</code>。</div>
       </section>
       <section>
         <h2>安装后如何确认</h2>
         <div class="grid">
-          <article class="card"><h3>扩展管理页</h3><p>卡片中应显示“AgentMesh360 官网申请填写器”，并且开关处于启用状态。</p></article>
+          <article class="card"><h3>扩展管理页</h3><p>卡片中应显示“AgentMesh-OfficialRecruitment”，并且开关处于启用状态。</p></article>
           <article class="card"><h3>Chrome 工具栏</h3><p>点击已固定的扩展图标，应能看到“连接本机 Agent”或“识别当前步骤”，而不是 API Key、配对码输入框、“扩展已损坏”或文件缺失。</p></article>
         </div>
       </section>
       <section>
         <h2>收到新版后如何升级</h2>
         <ol class="checklist">
-          <li>退出正在进行的辅助填写，让 Agent 运行 <code>ora-workbench extension update</code>。</li>
-          <li>CLI 校验新版本并更新同一个固定目录；无需重新选择目录。</li>
-          <li>打开 <code>chrome://extensions/</code>。</li>
-          <li>在扩展卡片上点击“重新加载”。</li>
-          <li>重新打开扩展，确认版本为 0.6.5 或更高，且本机 Agent 连接仍可恢复。</li>
+          <li>Chrome 商店安装的用户由 Chrome 自动更新，无需重新加载目录。</li>
+          <li>ZIP 安装用户先退出正在进行的辅助填写，让 Agent 运行 <code>ora-workbench extension update</code>。</li>
+          <li>Agent 校验新版本并更新同一个固定目录；随后打开 <code>chrome://extensions/</code>，在扩展卡片上点击“重新加载”。</li>
+          <li>重新打开扩展，确认版本为 0.6.6 或更高，且本机 Agent 连接仍可恢复。</li>
         </ol>
       </section>
       <section class="faq">
@@ -69,8 +85,8 @@
         <details><summary>Chrome 提示找不到 manifest.json</summary><p>通常是选择了 ZIP、选择了解压目录外面多一层的父目录，或者 ZIP 没有完整解压。请进入目录确认能够直接看到 manifest.json，再重新加载。</p></details>
         <details><summary>重启 Chrome 后扩展不见了</summary><p>先检查原解压目录是否被移动、改名或删除，再到扩展管理页确认扩展仍然启用。</p></details>
         <details><summary>Agent 提示扩展需要修复</summary><p>运行 <code>ora-workbench extension repair</code>。CLI 会重新下载并校验官方 ZIP，修复同一个固定目录；完成后在扩展管理页点击“重新加载”。</p></details>
-        <details><summary>为什么会看到开发者模式提示？</summary><p>这是 Chrome 对手动加载扩展的正常提示。当前 Early Access 采用这种方式服务少量种子用户，稳定规模化后再评估 Chrome Web Store。</p></details>
-        <details><summary>为什么不需要 API Key 或配对码？</summary><p>新版扩展只在首次使用时连接本机 Agent，由本机 Agent 完成账户校验。之后每次从当前招聘页面代建短期会话，并把申请和填写证据同步到 Web；通用 API Key 不进入扩展。请让本机 Agent 运行准备命令，不要直接下载原始 ZIP。</p></details>
+        <details><summary>为什么会看到开发者模式提示？</summary><p>这是 Chrome 对手动加载 ZIP 解压目录的正常提示。能够访问 Chrome Web Store 的用户在商店版本审核通过后可改用商店安装，不需要开发者模式。</p></details>
+        <details><summary>为什么不需要 API Key 或配对码？</summary><p>扩展只在首次使用时连接本机 Agent，由本机 Agent 完成账户校验。之后每次从当前招聘页面代建短期会话，并把申请和填写证据同步到 Web；通用 API Key 不进入扩展。商店版与 ZIP 版都遵守同一边界。</p></details>
         <details><summary>扩展提示需要先导入标准简历</summary><p>请让本机 Agent 读取你明确指定的标准简历并提交档案提案，再到 Web 工作台确认。扩展不会把招聘页面上的筛选项或表单选项当成你的个人档案。</p></details>
         <details><summary>扩展会替我提交申请吗？</summary><p>不会。附件、验证码、声明、下一步和最终提交仍由你本人完成。</p></details>
       </section>

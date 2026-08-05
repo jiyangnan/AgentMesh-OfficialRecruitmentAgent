@@ -5,7 +5,7 @@ $BaseUrl = if ($env:ORA_INSTALL_BASE_URL) {
 } else {
     "https://recruit.agentmesh360.com"
 }
-$AdapterVersion = "0.1.4"
+$AdapterVersion = "0.1.5"
 $LocalAppData = if ($env:LOCALAPPDATA) {
     $env:LOCALAPPDATA
 } else {
@@ -83,6 +83,7 @@ try {
         $Wheel
 
     $CliExe = Join-Path $Venv "Scripts\ora-workbench.exe"
+    & $CliExe extension host install
     $CmdPath = Join-Path $BinDir "ora-workbench.cmd"
     $CmdContent = "@echo off`r`n`"$CliExe`" %*`r`n"
     Set-Content -Path $CmdPath -Value $CmdContent -Encoding ASCII
@@ -119,6 +120,7 @@ try {
 
     Write-Output "AgentMesh-OfficialRecruitment Skill 与 CLI 适配器已安装。"
     Write-Output "CLI：$CmdPath"
+    Write-Output "Chrome 本机连接组件：已注册"
     Write-Output "Skill：$(Join-Path $SkillsRoot 'agentmesh-officialrecruitment\SKILL.md')"
     Write-Output "请重新打开宿主 Agent 任务，让它读取新 Skill。"
     Write-Output "首次使用前由你本人配置通用 API Key："

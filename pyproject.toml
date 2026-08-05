@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "official-recruitment-agent"
-version = "0.1.4"
+version = "0.1.5"
 description = "Public host-agent adapter for AgentMesh-OfficialRecruitment"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dev = [
 
 [project.scripts]
 ora-workbench = "official_recruitment_agent.workbench_cli:main"
+ora-native-host = "official_recruitment_agent.native_messaging:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

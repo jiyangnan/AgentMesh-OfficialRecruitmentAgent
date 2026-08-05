@@ -42,7 +42,18 @@ API Key 可在 [AgentMesh360 个人中心](https://agentmesh360.com/account/) �
 
 ## Chrome 扩展
 
-当前种子阶段使用开发者模式安装：
+产品提供两个官方安装渠道：
+
+1. 能够访问 Chrome Web Store 的用户，优先从官方商店页面安装并由 Chrome 自动更新；
+2. 无法访问商店的中国大陆用户，从工作台下载官方 ZIP，解压后在
+   `chrome://extensions/` 开启开发者模式并选择“加载已解压的扩展程序”。
+
+商店尚未审核通过时，工作台会明确显示“审核中”，不会把未公开页面作为可用入口。ZIP
+下载、当前版本、SHA-256 和完整中文步骤见
+[官方安装指南](https://recruit.agentmesh360.com/guides/install-browser-extension/)。两条
+渠道使用同一源码、版本和官方扩展 ID。
+
+本机 Agent 也可以代为校验并准备 ZIP：
 
 ```bash
 ora-workbench extension prepare
@@ -50,13 +61,12 @@ ora-workbench extension prepare
 
 命令会从 AgentMesh360 官方域名读取版本清单，校验扩展 ZIP 的大小与 SHA-256，解压到
 当前系统的固定用户目录，并尝试打开该目录和 Chrome 扩展管理页。macOS、Windows 和
-Linux 使用同一条命令。用户仍需亲自开启开发者模式并选择“加载已解压的扩展程序”，
-这是 Chrome 首次加载的明确确认步骤。
+Linux 使用同一条命令。Chrome 首次加载仍由用户本人确认。
 
-扩展安装后只需点击一次“连接本机 Agent”。CLI 在准备扩展时已经生成本机配对资料，
-本机 Agent 会使用用户此前配置的通用 API Key 完成账户校验；扩展既不展示 API Key
-输入框，也不读取、保存或要求用户再次复制通用 API Key。官方原始 ZIP 只供 CLI 校验
-和准备，不作为可直接手动安装的独立交付物。
+扩展安装后只需点击一次“连接本机 Agent”。安装器注册的本机连接组件只允许固定官方
+扩展 ID 调用，并由本机 Agent 使用用户此前配置的通用 API Key 完成账户校验；扩展既
+不展示 API Key 输入框，也不读取、保存或要求用户再次复制通用 API Key。本机配对秘密
+同样不会返回扩展。
 
 后续可以由宿主 Agent 运行：
 
