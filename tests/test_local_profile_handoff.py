@@ -251,8 +251,53 @@ def test_handoff_is_origin_bound_and_replay_is_idempotent(
 
 def test_local_profile_database_permissions_are_private(tmp_path: Path) -> None:
     store = LocalProfileStore(tmp_path / "private-profile.sqlite3")
-    mode = stat.S_IMODE(store.path.stat().st_mode)
-    assert mode == 0o600
+    connection = store._connect()
+    try:
+        connection.execute("CREATE TABLE permission_probe (value TEXT)")
+        connection.execute(
+            "INSERT INTO permission_probe (value) VALUES ('synthetic')"
+        )
+        connection.commit()
+
+        database_files = [
+            store.path,
+            Path(f"{store.path}-wal"),
+            Path(f"{store.path}-shm"),
+        ]
+        assert all(path.exists() for path in database_files)
+        assert {
+            stat.S_IMODE(path.stat().st_mode) for path in database_files
+        } == {0o600}
+
+        for path in database_files:
+            path.chmod(0o644)
+        store._secure_sqlite_files(create_database=True)
+        assert {
+            stat.S_IMODE(path.stat().st_mode) for path in database_files
+        } == {0o600}
+    finally:
+        connection.close()
+
+
+def test_local_profile_prepares_private_wal_files_before_connect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = LocalProfileStore(tmp_path / "private-profile.sqlite3")
+    original_connect = sqlite3.connect
+    observed_modes: dict[str, int] = {}
+
+    def inspected_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        for suffix in ("-wal", "-shm"):
+            path = Path(f"{store.path}{suffix}")
+            observed_modes[suffix] = stat.S_IMODE(path.stat().st_mode)
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", inspected_connect)
+    with store._connect() as connection:
+        connection.execute("SELECT 1")
+
+    assert observed_modes == {"-wal": 0o600, "-shm": 0o600}
 
 
 def test_cascading_select_answer_maps_each_segment_to_platform_value() -> None:
