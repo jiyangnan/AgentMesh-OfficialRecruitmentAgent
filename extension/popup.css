@@ -86,6 +86,10 @@ form {
   line-height: 1.55;
 }
 
+#setup button {
+  width: 100%;
+}
+
 #assist form {
   display: block;
 }

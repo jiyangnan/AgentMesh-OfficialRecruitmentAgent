@@ -41,14 +41,6 @@ export function normalizeServerUrl(value) {
   return url.toString().replace(/\/$/, "");
 }
 
-export function normalizeApiKey(value) {
-  const key = String(value ?? "").trim();
-  if (key.length < 24 || key.length > 512 || /\s/.test(key)) {
-    throw new Error("请输入有效的 AgentMesh360 API Key。");
-  }
-  return key;
-}
-
 export async function assistSessionIdempotencyKey(
   pageUrl,
   installationId,

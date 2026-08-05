@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -15,8 +16,10 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from official_recruitment_agent.extension_delivery import (
+    ExtensionDeliveryError,
     default_extension_root,
     extension_status,
+    load_extension_pairing,
     open_extension_setup,
     prepare_extension,
 )
@@ -451,10 +454,10 @@ def main(argv: list[str] | None = None) -> int:
                     + "/guides/install-browser-extension/"
                 ),
                 "instructions": [
-                    "下载并解压扩展包。",
+                    "让本机 Agent 准备并校验扩展包。",
                     "在 chrome://extensions 开启开发者模式。",
                     "选择加载已解压的扩展程序。",
-                    "首次打开扩展时填写同一 AgentMesh360 API Key。",
+                    "打开扩展并点击连接本机 Agent，无需再次输入 API Key。",
                 ],
                 "recommended_command": "ora-workbench extension prepare",
             }
@@ -470,6 +473,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if not args.no_open:
                     result["opened"] = open_extension_setup(extension_root)
+                if args.api_key and not args.base_url.startswith(
+                    ("http://127.0.0.1:", "http://localhost:")
+                ):
+                    result["local_agent"] = _start_profile_handoff(
+                        args,
+                        extension_root=extension_root,
+                    )
                 result["manual_steps"] = [
                     "在 Chrome 扩展管理页开启开发者模式。",
                     "点击加载已解压的扩展程序。",
@@ -492,8 +502,16 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     flush=True,
                 )
-                serve_local_handoff(service)
-                return 0
+                pid_path = _local_handoff_pid_path()
+                _write_local_handoff_pid(pid_path, os.getpid())
+                try:
+                    serve_local_handoff(service)
+                    return 0
+                finally:
+                    try:
+                        pid_path.unlink()
+                    except FileNotFoundError:
+                        pass
             result = (
                 _start_profile_handoff(args)
                 if args.profile_handoff_command == "start"
@@ -730,10 +748,17 @@ def _local_handoff_service(
     args: argparse.Namespace,
 ) -> LocalHandoffService:
     product, workspace_ref = _product_and_workspace(args)
+    try:
+        extension_pairing = load_extension_pairing(
+            default_extension_root()
+        )
+    except ExtensionDeliveryError:
+        extension_pairing = None
     return LocalHandoffService(
         store=LocalProfileStore(default_local_profile_path()),
         product=product,
         configured_workspace_ref=workspace_ref,
+        extension_pairing=extension_pairing,
     )
 
 
@@ -779,6 +804,126 @@ def _query_local_handoff(
     return payload
 
 
+def _local_handoff_pid_path() -> Path:
+    return _config_path().with_name(
+        "official-recruitment-local-handoff.pid.json"
+    )
+
+
+def _write_local_handoff_pid(path: Path, pid: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(
+                {"schema_version": 1, "pid": pid},
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if os.name != "nt":
+            temporary.chmod(0o600)
+        os.replace(temporary, path)
+        if os.name != "nt":
+            path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _read_local_handoff_pid() -> int | None:
+    try:
+        payload = json.loads(
+            _local_handoff_pid_path().read_text(encoding="utf-8")
+        )
+        pid = payload.get("pid") if isinstance(payload, dict) else None
+        return pid if isinstance(pid, int) and pid > 1 else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _process_command(pid: int) -> str:
+    if sys.platform == "win32":
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_Process -Filter "
+                f"\"ProcessId = {pid}\").CommandLine",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    else:
+        completed = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _discover_local_handoff_pid() -> int | None:
+    stored = _read_local_handoff_pid()
+    if stored is not None:
+        return stored
+    if sys.platform == "win32":
+        return None
+    try:
+        completed = subprocess.run(
+            [
+                "lsof",
+                "-nP",
+                f"-iTCP:{LOCAL_HANDOFF_URL.rsplit(':', 1)[1]}",
+                "-sTCP:LISTEN",
+                "-t",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    candidates = [
+        int(item)
+        for item in completed.stdout.split()
+        if item.isdigit() and int(item) > 1
+    ]
+    return candidates[0] if len(set(candidates)) == 1 else None
+
+
+def _stop_outdated_local_handoff() -> None:
+    pid = _discover_local_handoff_pid()
+    if pid is None:
+        raise ValueError(
+            "检测到旧版本机服务占用 8765，但无法安全确认其进程。"
+        )
+    command = _process_command(pid)
+    if (
+        "official_recruitment_agent.workbench_cli" not in command
+        or "profile-handoff" not in command
+        or "serve" not in command
+    ):
+        raise ValueError(
+            "8765 端口不是本产品的交接服务，已拒绝自动停止。"
+        )
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(50):
+        time.sleep(0.1)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+    raise ValueError("旧版本机交接服务没有按预期停止。")
+
+
 def _profile_handoff_status(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
@@ -788,18 +933,40 @@ def _profile_handoff_status(
 
 def _start_profile_handoff(
     args: argparse.Namespace,
+    *,
+    extension_root: Path | None = None,
 ) -> dict[str, Any]:
     _, workspace_ref = _product_and_workspace(args)
+    expected_installation_id = None
+    if extension_root is not None:
+        expected_installation_id = load_extension_pairing(
+            extension_root
+        )["installation_id"]
+    current = None
     try:
         current = _query_local_handoff(args, workspace_ref)
-        return {**current, "started": False, "already_running": True}
     except (HTTPError, URLError, OSError, ValueError):
-        pass
+        current = None
+    if current is not None and (
+        expected_installation_id is None
+        or current.get("extension_installation_id")
+        == expected_installation_id
+    ):
+        return {**current, "started": False, "already_running": True}
+    if current is not None:
+        _stop_outdated_local_handoff()
     log_path = _config_path().with_name(
         "official-recruitment-local-handoff.log"
     )
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab") as log:
+        child_environment = os.environ.copy()
+        child_environment["ORA_WORKBENCH_URL"] = args.base_url.rstrip("/")
+        child_environment["AGENTMESH_API_KEY"] = args.api_key
+        child_environment["ORA_ACCOUNT_REF"] = args.account
+        child_environment["ORA_ACTOR_ID"] = args.actor
+        if extension_root is not None:
+            child_environment["ORA_EXTENSION_DIR"] = str(extension_root)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -813,6 +980,7 @@ def _start_profile_handoff(
             stderr=log,
             start_new_session=True,
             close_fds=True,
+            env=child_environment,
         )
     if os.name != "nt":
         log_path.chmod(0o600)

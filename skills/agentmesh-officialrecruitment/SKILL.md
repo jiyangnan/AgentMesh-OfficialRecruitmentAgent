@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.0
+version: 0.3.1
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -100,21 +100,28 @@ the source suffix and a SHA-256 digest.
 
 After a confirmed profile exists:
 
-1. Run `ora-workbench extension status`. If it returns `not_installed`, run
-   `ora-workbench extension prepare`; if it returns `repair_required`, run
-   `ora-workbench extension repair`. These commands use native fixed user
-   directories on macOS, Windows, and Linux.
+1. Run `ora-workbench extension prepare` every time the user enters the
+   extension workflow. It is idempotent: a healthy install is reused, while
+   missing files and pairing state are prepared in the same fixed user
+   directory on macOS, Windows, and Linux. If the command itself directs a
+   repair, run `ora-workbench extension repair`. Continue only when
+   `local_agent` reports `status: ready`, `workspace_match: true` and
+   `extension_connection_supported: true`.
 2. Relay the returned `manual_steps` exactly. Chrome still requires the user to
    enable developer mode and load the prepared directory themselves; never
    claim that the extension was silently installed.
-3. The user opens and logs in to a recruitment website themselves.
-4. The user clicks the extension to inspect the current visible step.
-5. The extension previews mappings before filling reversible ordinary fields.
-6. After every inspection or fill, run `ora-workbench profile-questions`
+3. The user opens the extension and clicks `连接本机 Agent` once. Do not ask
+   them to find, copy or paste an API Key into the extension. The universal Key
+   remains only in the local Agent configuration; the extension stores a
+   revocable local session and task-scoped cloud capabilities.
+4. The user opens and logs in to a recruitment website themselves.
+5. The user clicks the extension to inspect the current visible step.
+6. The extension previews mappings before filling reversible ordinary fields.
+7. After every inspection or fill, run `ora-workbench profile-questions`
    before reporting the current step complete or directing the user onward.
-7. The user handles files, declarations, CAPTCHA, next-step navigation and
+8. The user handles files, declarations, CAPTCHA, next-step navigation and
    final submission.
-7. The extension writes bounded evidence back to the same application shown in
+9. The extension writes bounded evidence back to the same application shown in
    Web.
 
 ### Mandatory Agent Gate
@@ -174,9 +181,12 @@ logs or durable Agent memory, or fall back to a cloud proposal when the local
 handoff is unavailable. Leave the browser draft intact and repair the local
 handoff instead.
 
-You do not need to remain online while the extension fills a page. Do not try
-to replace the extension with browser automation unless the user explicitly
-starts a separate, authorized development test.
+The conversational host Agent does not need to remain active while the
+extension fills a page, but the CLI-started loopback service must remain
+healthy. Repair or restart that local service yourself; do not ask the user to
+enter a Key into the extension as a fallback. Do not replace the extension
+with browser automation unless the user explicitly starts a separate,
+authorized development test.
 
 ## Applications And Status
 

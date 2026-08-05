@@ -160,17 +160,28 @@ def test_agent_prepares_extension_without_claiming_silent_chrome_install(
         return {
             "status": "ready",
             "healthy": True,
-            "extension_version": "0.6.4",
+            "extension_version": "0.6.5",
             "install_directory": str(extension_root),
             "changed": True,
         }
 
     monkeypatch.setattr(cli_module, "prepare_extension", fake_prepare)
+    monkeypatch.setattr(
+        cli_module,
+        "_start_profile_handoff",
+        lambda _args, *, extension_root: {
+            "status": "ready",
+            "extension_connection_supported": True,
+            "install_directory": str(extension_root),
+        },
+    )
 
     code = cli_module.main(
         [
             "--base-url",
             "https://recruit.agentmesh360.test",
+            "--api-key",
+            "agentmesh_live_test-key",
             "extension",
             "prepare",
             "--install-dir",
@@ -189,6 +200,7 @@ def test_agent_prepares_extension_without_claiming_silent_chrome_install(
         )
     ]
     assert payload["status"] == "ready"
+    assert payload["local_agent"]["extension_connection_supported"] is True
     assert "安装完成" not in json.dumps(payload, ensure_ascii=False)
     assert payload["manual_steps"] == [
         "在 Chrome 扩展管理页开启开发者模式。",
@@ -202,6 +214,7 @@ def test_extension_repair_forces_verified_redownload(
     capsys,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("ORA_CONFIG_PATH", str(tmp_path / "missing.json"))
     extension_root = tmp_path / "extension"
     calls = []
 
@@ -322,6 +335,83 @@ def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
     assert result["started"] is True
     assert result["pid"] == 43210
     assert calls == {"cloud": 1, "local": 2, "spawn": 1}
+
+
+def test_extension_update_restarts_outdated_local_handoff(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace_ref = _test_workspace_ref("b")
+    installation_id = f"orainstall_{'a' * 32}"
+    calls = {"query": 0, "stop": 0, "spawn": 0}
+
+    monkeypatch.setattr(
+        cli_module,
+        "_product_and_workspace",
+        lambda _args: (object(), workspace_ref),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "load_extension_pairing",
+        lambda _root: {"installation_id": installation_id},
+    )
+
+    def fake_query(_args, _workspace_ref):
+        calls["query"] += 1
+        if calls["query"] == 1:
+            return {
+                "status": "ready",
+                "workspace_match": True,
+                "extension_connection_supported": False,
+                "extension_installation_id": None,
+            }
+        return {
+            "status": "ready",
+            "workspace_match": True,
+            "extension_connection_supported": True,
+            "extension_installation_id": installation_id,
+        }
+
+    monkeypatch.setattr(cli_module, "_query_local_handoff", fake_query)
+    monkeypatch.setattr(
+        cli_module,
+        "_stop_outdated_local_handoff",
+        lambda: calls.__setitem__("stop", calls["stop"] + 1),
+    )
+
+    class FakeProcess:
+        pid = 54321
+
+        @staticmethod
+        def poll():
+            return None
+
+    def fake_popen(*_args, **_kwargs):
+        calls["spawn"] += 1
+        return FakeProcess()
+
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        cli_module,
+        "_config_path",
+        lambda: tmp_path / "official-recruitment.json",
+    )
+    args = cli_module.argparse.Namespace(
+        base_url="https://recruit.agentmesh360.com",
+        api_key="agentmesh_live_test-key",
+        account="acct-test",
+        actor="agent-test",
+    )
+
+    result = cli_module._start_profile_handoff(
+        args,
+        extension_root=tmp_path / "extension",
+    )
+
+    assert result["started"] is True
+    assert result["extension_installation_id"] == installation_id
+    assert calls == {"query": 2, "stop": 1, "spawn": 1}
 
 
 def test_agent_proposes_structured_profile_without_uploading_resume(

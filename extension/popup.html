@@ -20,29 +20,10 @@
     <main>
       <section id="setup">
         <form id="connection-form">
-          <label>
-            <span>工作台地址</span>
-            <input
-              id="server-url"
-              type="url"
-              value="https://recruit.agentmesh360.com"
-              autocomplete="url"
-              required
-            />
-          </label>
-          <label>
-            <span>AgentMesh360 API Key</span>
-            <input
-              id="api-key"
-              type="password"
-              placeholder="与本机 Agent 使用同一个 Key"
-              autocomplete="off"
-            />
-          </label>
-          <button class="primary" type="submit">连接三端工作区</button>
+          <button class="primary" type="submit">连接本机 Agent</button>
         </form>
         <p class="setup-note">
-          只需连接一次。扩展、Agent 与 Web 将使用同一账户和个人档案。
+          本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。
         </p>
       </section>
       <section id="assist" hidden>

@@ -26,6 +26,7 @@ LOCAL_HANDOFF_PORT = 8765
 LOCAL_HANDOFF_URL = f"http://{LOCAL_HANDOFF_HOST}:{LOCAL_HANDOFF_PORT}"
 MAX_REQUEST_BYTES = 256 * 1024
 PROPOSAL_TTL_SECONDS = 15 * 60
+LOCAL_EXTENSION_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 ALLOWED_WEB_ORIGINS = frozenset(
     {
         "https://recruit.agentmesh360.com",
@@ -39,6 +40,11 @@ ALLOWED_WEB_ORIGINS = frozenset(
 )
 _CHROME_EXTENSION_ORIGIN = re.compile(r"^chrome-extension://[a-p]{32}$")
 _QUESTION_ID = re.compile(r"^pq_[0-9a-f]{24}$")
+_INSTALLATION_ID = re.compile(r"^orainstall_[0-9a-f]{32}$")
+_PAIRING_SECRET = re.compile(r"^orapair_[A-Za-z0-9_-]{32,96}$")
+_LOCAL_EXTENSION_SESSION = re.compile(
+    r"^oralocalsession_[A-Za-z0-9_-]{32,128}$"
+)
 
 
 class LocalHandoffError(Exception):
@@ -213,9 +219,152 @@ class LocalProfileStore:
                         scope_ref
                     )
                 );
+                CREATE TABLE IF NOT EXISTS extension_local_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    installation_id TEXT NOT NULL,
+                    extension_origin TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    expires_at_epoch INTEGER NOT NULL,
+                    revoked_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS
+                    idx_extension_local_sessions_installation
+                ON extension_local_sessions (
+                    installation_id,
+                    extension_origin,
+                    revoked_at
+                );
                 """
             )
         self._secure_sqlite_files(create_database=True)
+
+    def create_extension_session(
+        self,
+        *,
+        installation_id: str,
+        extension_origin: str,
+    ) -> dict[str, Any]:
+        if not _INSTALLATION_ID.fullmatch(installation_id):
+            raise LocalHandoffError(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_extension_installation",
+                "扩展安装编号无效，请让本机 Agent 修复扩展。",
+            )
+        if not _CHROME_EXTENSION_ORIGIN.fullmatch(extension_origin):
+            raise LocalHandoffError(
+                HTTPStatus.FORBIDDEN,
+                "invalid_extension_origin",
+                "本机 Agent 只接受已安装 Chrome 扩展的连接。",
+            )
+        token = f"oralocalsession_{secrets.token_urlsafe(36)}"
+        session_id = f"localsession_{secrets.token_hex(12)}"
+        created_at = _utc_now()
+        expires_at_epoch = int(time.time()) + (
+            LOCAL_EXTENSION_SESSION_TTL_SECONDS
+        )
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE extension_local_sessions
+                SET revoked_at = ?
+                WHERE installation_id = ?
+                  AND extension_origin = ?
+                  AND revoked_at IS NULL
+                """,
+                (created_at, installation_id, extension_origin),
+            )
+            connection.execute(
+                """
+                INSERT INTO extension_local_sessions (
+                    session_id,
+                    installation_id,
+                    extension_origin,
+                    token_hash,
+                    created_at,
+                    expires_at_epoch
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    installation_id,
+                    extension_origin,
+                    _hash_capability(token),
+                    created_at,
+                    expires_at_epoch,
+                ),
+            )
+        return {
+            "session_token": token,
+            "installation_id": installation_id,
+            "expires_at": datetime.fromtimestamp(
+                expires_at_epoch,
+                timezone.utc,
+            ).isoformat(),
+        }
+
+    def require_extension_session(
+        self,
+        *,
+        token: str,
+        extension_origin: str,
+    ) -> dict[str, Any]:
+        if not _LOCAL_EXTENSION_SESSION.fullmatch(token):
+            raise LocalHandoffError(
+                HTTPStatus.UNAUTHORIZED,
+                "local_extension_authentication_required",
+                "浏览器扩展需要重新连接本机 Agent。",
+            )
+        with self._connect() as connection:
+            record = connection.execute(
+                """
+                SELECT * FROM extension_local_sessions
+                WHERE token_hash = ?
+                """,
+                (_hash_capability(token),),
+            ).fetchone()
+        if (
+            record is None
+            or record["revoked_at"] is not None
+            or int(record["expires_at_epoch"]) <= int(time.time())
+            or not hmac.compare_digest(
+                str(record["extension_origin"]),
+                extension_origin,
+            )
+        ):
+            raise LocalHandoffError(
+                HTTPStatus.UNAUTHORIZED,
+                "local_extension_session_invalid",
+                "浏览器扩展的本机连接已失效，请重新连接。",
+            )
+        return {
+            "session_id": str(record["session_id"]),
+            "installation_id": str(record["installation_id"]),
+            "expires_at": datetime.fromtimestamp(
+                int(record["expires_at_epoch"]),
+                timezone.utc,
+            ).isoformat(),
+        }
+
+    def revoke_extension_session(
+        self,
+        *,
+        token: str,
+        extension_origin: str,
+    ) -> None:
+        session = self.require_extension_session(
+            token=token,
+            extension_origin=extension_origin,
+        )
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE extension_local_sessions
+                SET revoked_at = ?
+                WHERE session_id = ?
+                """,
+                (_utc_now(), session["session_id"]),
+            )
 
     def create_proposal(
         self,
@@ -733,11 +882,26 @@ class ProductClient:
             f"?fill_task_id={quote(fill_task_id)}",
         )
 
+    def create_assist_session(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/v1/assist-sessions",
+            payload,
+            extra_headers={"Idempotency-Key": idempotency_key},
+        )
+
     def _request(
         self,
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        *,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         body = (
             json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -754,6 +918,8 @@ class ProductClient:
             headers["X-ORA-Account"] = self.account_ref
         if body is not None:
             headers["Content-Type"] = "application/json"
+        if extra_headers:
+            headers.update(extra_headers)
         request = Request(
             self.base_url.rstrip("/") + path,
             data=body,
@@ -794,6 +960,7 @@ class LocalHandoffService:
     store: LocalProfileStore
     product: ProductClient
     configured_workspace_ref: str
+    extension_pairing: dict[str, Any] | None = None
 
     def status(self, workspace_ref: str) -> dict[str, Any]:
         return {
@@ -809,7 +976,141 @@ class LocalHandoffService:
             ),
             "local_store": "ready",
             "answer_residency": "local_device",
+            "extension_connection_supported": self.extension_pairing
+            is not None,
+            "extension_installation_id": (
+                self.extension_pairing.get("installation_id")
+                if self.extension_pairing
+                else None
+            ),
+            "pid": os.getpid(),
         }
+
+    def connect_extension(
+        self,
+        *,
+        installation_id: str,
+        pairing_secret: str,
+        origin: str,
+    ) -> dict[str, Any]:
+        pairing = self.extension_pairing
+        if pairing is None:
+            raise LocalHandoffError(
+                HTTPStatus.CONFLICT,
+                "extension_pairing_not_prepared",
+                "本机 Agent 尚未准备扩展配对资料，请先运行 extension repair。",
+            )
+        expected_installation_id = str(pairing.get("installation_id") or "")
+        expected_secret = str(pairing.get("pairing_secret") or "")
+        if (
+            not _INSTALLATION_ID.fullmatch(installation_id)
+            or not _PAIRING_SECRET.fullmatch(pairing_secret)
+            or not hmac.compare_digest(
+                installation_id,
+                expected_installation_id,
+            )
+            or not hmac.compare_digest(pairing_secret, expected_secret)
+        ):
+            raise LocalHandoffError(
+                HTTPStatus.FORBIDDEN,
+                "extension_pairing_rejected",
+                "扩展与本机 Agent 的配对资料不一致，请让 Agent 修复扩展。",
+            )
+        session = self.store.create_extension_session(
+            installation_id=installation_id,
+            extension_origin=origin,
+        )
+        return {
+            "contract_version": "local-extension-connection-v1",
+            "status": "connected",
+            "server_url": self.product.base_url.rstrip("/"),
+            "workspace_ref": self.configured_workspace_ref,
+            **session,
+        }
+
+    def extension_status(
+        self,
+        *,
+        session_token: str,
+        origin: str,
+    ) -> dict[str, Any]:
+        session = self.store.require_extension_session(
+            token=session_token,
+            extension_origin=origin,
+        )
+        return {
+            "contract_version": "local-extension-connection-v1",
+            "status": "connected",
+            "server_url": self.product.base_url.rstrip("/"),
+            "workspace_ref": self.configured_workspace_ref,
+            "installation_id": session["installation_id"],
+            "expires_at": session["expires_at"],
+        }
+
+    def disconnect_extension(
+        self,
+        *,
+        session_token: str,
+        origin: str,
+    ) -> dict[str, Any]:
+        self.store.revoke_extension_session(
+            token=session_token,
+            extension_origin=origin,
+        )
+        return {
+            "contract_version": "local-extension-connection-v1",
+            "status": "disconnected",
+        }
+
+    def create_extension_assist_session(
+        self,
+        *,
+        session_token: str,
+        origin: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        session = self.store.require_extension_session(
+            token=session_token,
+            extension_origin=origin,
+        )
+        page_url = str(payload.get("page_url") or "")
+        page_title_value = payload.get("page_title")
+        page_title = (
+            str(page_title_value) if page_title_value is not None else None
+        )
+        idempotency_key = str(payload.get("idempotency_key") or "")
+        if (
+            len(page_url) < 8
+            or len(page_url) > 4096
+            or urlsplit(page_url).scheme not in {"http", "https"}
+            or page_title is not None
+            and len(page_title) > 300
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{16,200}", idempotency_key)
+        ):
+            raise LocalHandoffError(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_extension_assist_request",
+                "当前页面的辅助填写请求格式无效。",
+            )
+        result = self.product.create_assist_session(
+            {
+                "page_url": page_url,
+                "page_title": page_title,
+                "installation_id": session["installation_id"],
+                "expires_in_seconds": 900,
+            },
+            idempotency_key=idempotency_key,
+        )
+        if (
+            not isinstance(result.get("result"), dict)
+            or not isinstance(result.get("extension_capability"), str)
+        ):
+            raise LocalHandoffError(
+                HTTPStatus.BAD_GATEWAY,
+                "invalid_assist_session_response",
+                "产品服务没有返回有效的短期辅助会话。",
+            )
+        return result
 
     def submit(
         self,
@@ -854,22 +1155,17 @@ class LocalHandoffService:
         self,
         *,
         fill_task_id: str,
-        presented_api_key: str,
+        session_token: str,
+        origin: str,
     ) -> dict[str, Any]:
-        if not hmac.compare_digest(
-            presented_api_key,
-            self.product.api_key,
-        ):
-            raise LocalHandoffError(
-                HTTPStatus.FORBIDDEN,
-                "local_agent_account_mismatch",
-                "浏览器扩展与本机 Agent 使用的账户不一致。",
-            )
+        self.store.require_extension_session(
+            token=session_token,
+            extension_origin=origin,
+        )
         questions = self.product.profile_questions(fill_task_id)
-        access = self.product.access()
         resolved = {
             **questions,
-            "workspace_ref": access.get("workspace_ref"),
+            "workspace_ref": self.configured_workspace_ref,
         }
         return self.store.resolution_for(resolved)
 
@@ -949,12 +1245,39 @@ def create_handler(
                         str(payload.get("proposal_id") or ""),
                         str(payload.get("proposal_capability") or ""),
                     )
+                elif path == "/v1/extension/connect":
+                    result = service.connect_extension(
+                        installation_id=str(
+                            payload.get("installation_id") or ""
+                        ),
+                        pairing_secret=str(
+                            payload.get("pairing_secret") or ""
+                        ),
+                        origin=origin,
+                    )
+                elif path == "/v1/extension/status":
+                    result = service.extension_status(
+                        session_token=self._bearer(),
+                        origin=origin,
+                    )
+                elif path == "/v1/extension/disconnect":
+                    result = service.disconnect_extension(
+                        session_token=self._bearer(),
+                        origin=origin,
+                    )
+                elif path == "/v1/extension/assist-sessions":
+                    result = service.create_extension_assist_session(
+                        session_token=self._bearer(),
+                        origin=origin,
+                        payload=payload,
+                    )
                 elif path == "/v1/fill-tasks/resolved-fields":
                     result = service.resolved_fields(
                         fill_task_id=str(
                             payload.get("fill_task_id") or ""
                         ),
-                        presented_api_key=self._bearer(),
+                        session_token=self._bearer(),
+                        origin=origin,
                     )
                 else:
                     raise LocalHandoffError(

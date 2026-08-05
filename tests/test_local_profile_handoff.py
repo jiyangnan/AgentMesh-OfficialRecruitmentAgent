@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import sqlite3
 import stat
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,7 @@ from official_recruitment_agent.local_profile_handoff import (
     LocalProfileStore,
     ProductClient,
     _binding_value,
+    create_handler,
     default_local_profile_path,
 )
 
@@ -23,6 +27,9 @@ SENTINEL = "ORA-PRIVATE-SENTINEL-20260804"
 WORKSPACE_REF = "ws_0123456789abcdef0123456789abcdef"
 FILL_TASK_ID = "fill_0123456789abcdef01234567"
 QUESTION_ID = "pq_aaaaaaaaaaaaaaaaaaaaaaaa"
+EXTENSION_ORIGIN = f"chrome-extension://{'a' * 32}"
+INSTALLATION_ID = f"orainstall_{'b' * 32}"
+PAIRING_SECRET = f"orapair_{'c' * 43}"
 
 
 def test_local_profile_path_uses_native_windows_local_app_data(
@@ -44,6 +51,7 @@ def test_local_profile_path_uses_native_windows_local_app_data(
 
 class FakeProductClient:
     api_key = "jobagent_live_local_handoff_test_key"
+    base_url = "https://recruit.agentmesh360.com"
 
     def __init__(self, resolved: dict) -> None:
         self.resolved = resolved
@@ -69,6 +77,25 @@ class FakeProductClient:
                 "site_domain",
                 "questions",
             }
+        }
+
+    def create_assist_session(
+        self,
+        payload: dict,
+        *,
+        idempotency_key: str,
+    ) -> dict:
+        self.calls.append(
+            ("create_assist_session", (payload, idempotency_key))
+        )
+        return {
+            "result": {
+                "task": {
+                    "fill_task_id": FILL_TASK_ID,
+                    "status": "awaiting_form",
+                }
+            },
+            "extension_capability": "oraext_short-lived.capability",
         }
 
 
@@ -150,6 +177,12 @@ def _service(tmp_path: Path) -> tuple[LocalHandoffService, FakeProductClient]:
         store=LocalProfileStore(tmp_path / "private-profile.sqlite3"),
         product=product,  # type: ignore[arg-type]
         configured_workspace_ref=WORKSPACE_REF,
+        extension_pairing={
+            "schema_version": 1,
+            "installation_id": INSTALLATION_ID,
+            "pairing_secret": PAIRING_SECRET,
+            "local_agent_url": "http://127.0.0.1:8765",
+        },
     )
     return service, product
 
@@ -198,9 +231,15 @@ def test_private_answer_stays_local_and_extension_receives_confirmed_value(
     assert confirmed["status"] == "confirmed"
     assert SENTINEL not in json.dumps(confirmed, ensure_ascii=False)
 
+    local_connection = service.connect_extension(
+        installation_id=INSTALLATION_ID,
+        pairing_secret=PAIRING_SECRET,
+        origin=EXTENSION_ORIGIN,
+    )
     resolution = service.resolved_fields(
         fill_task_id=FILL_TASK_ID,
-        presented_api_key=product.api_key,
+        session_token=local_connection["session_token"],
+        origin=EXTENSION_ORIGIN,
     )
     assert resolution["resolved_question_ids"] == [QUESTION_ID]
     assert resolution["fields"] == [
@@ -217,6 +256,172 @@ def test_private_answer_stays_local_and_extension_receives_confirmed_value(
             "question_id": QUESTION_ID,
         }
     ]
+
+
+def test_extension_pairing_proxies_cloud_session_without_exposing_api_key(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+
+    connected = service.connect_extension(
+        installation_id=INSTALLATION_ID,
+        pairing_secret=PAIRING_SECRET,
+        origin=EXTENSION_ORIGIN,
+    )
+    result = service.create_extension_assist_session(
+        session_token=connected["session_token"],
+        origin=EXTENSION_ORIGIN,
+        payload={
+            "page_url": "https://careers.example.com/apply",
+            "page_title": "示例报名页",
+            "idempotency_key": "assist-local-proxy-test-0001",
+        },
+    )
+
+    assert connected["status"] == "connected"
+    assert connected["server_url"] == product.base_url
+    assert "api_key" not in connected
+    assert product.api_key not in json.dumps(connected, ensure_ascii=False)
+    assert result["extension_capability"].startswith("oraext_")
+    assert product.calls[-1] == (
+        "create_assist_session",
+        (
+            {
+                "page_url": "https://careers.example.com/apply",
+                "page_title": "示例报名页",
+                "installation_id": INSTALLATION_ID,
+                "expires_in_seconds": 900,
+            },
+            "assist-local-proxy-test-0001",
+        ),
+    )
+
+
+def test_extension_pairing_rejects_wrong_secret_and_disconnect_revokes(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(tmp_path)
+    with pytest.raises(LocalHandoffError) as rejected:
+        service.connect_extension(
+            installation_id=INSTALLATION_ID,
+            pairing_secret=f"orapair_{'d' * 43}",
+            origin=EXTENSION_ORIGIN,
+        )
+    assert rejected.value.code == "extension_pairing_rejected"
+
+    connected = service.connect_extension(
+        installation_id=INSTALLATION_ID,
+        pairing_secret=PAIRING_SECRET,
+        origin=EXTENSION_ORIGIN,
+    )
+    service.disconnect_extension(
+        session_token=connected["session_token"],
+        origin=EXTENSION_ORIGIN,
+    )
+    with pytest.raises(LocalHandoffError) as revoked:
+        service.extension_status(
+            session_token=connected["session_token"],
+            origin=EXTENSION_ORIGIN,
+        )
+    assert revoked.value.code == "local_extension_session_invalid"
+
+
+def test_extension_local_session_is_bound_to_chrome_extension_origin(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(tmp_path)
+    connected = service.connect_extension(
+        installation_id=INSTALLATION_ID,
+        pairing_secret=PAIRING_SECRET,
+        origin=EXTENSION_ORIGIN,
+    )
+
+    with pytest.raises(LocalHandoffError) as mismatch:
+        service.extension_status(
+            session_token=connected["session_token"],
+            origin=f"chrome-extension://{'d' * 32}",
+        )
+
+    assert mismatch.value.code == "local_extension_session_invalid"
+
+
+def test_loopback_http_connect_proxy_and_disconnect_round_trip(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def post(path: str, payload: dict, token: str | None = None):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=2,
+        )
+        headers = {
+            "Host": "127.0.0.1:8765",
+            "Origin": EXTENSION_ORIGIN,
+            "Content-Type": "application/json",
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        connection.request(
+            "POST",
+            path,
+            body=json.dumps(payload),
+            headers=headers,
+        )
+        response = connection.getresponse()
+        body = json.loads(response.read())
+        connection.close()
+        return response.status, body
+
+    try:
+        status, connected = post(
+            "/v1/extension/connect",
+            {
+                "installation_id": INSTALLATION_ID,
+                "pairing_secret": PAIRING_SECRET,
+            },
+        )
+        assert status == 200
+        assert "api_key" not in connected
+
+        status, assist = post(
+            "/v1/extension/assist-sessions",
+            {
+                "page_url": "https://careers.example.com/apply",
+                "page_title": "示例报名页",
+                "idempotency_key": "assist-http-round-trip-0001",
+            },
+            connected["session_token"],
+        )
+        assert status == 200
+        assert assist["extension_capability"].startswith("oraext_")
+        assert product.calls[-1][0] == "create_assist_session"
+
+        status, disconnected = post(
+            "/v1/extension/disconnect",
+            {},
+            connected["session_token"],
+        )
+        assert status == 200
+        assert disconnected["status"] == "disconnected"
+
+        status, rejected = post(
+            "/v1/extension/status",
+            {},
+            connected["session_token"],
+        )
+        assert status == 401
+        assert rejected["error"]["code"] == (
+            "local_extension_session_invalid"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_resolution_status_never_returns_private_values(tmp_path: Path) -> None:

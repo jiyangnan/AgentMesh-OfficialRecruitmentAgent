@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import hashlib
 import json
+import os
 from pathlib import Path
 import zipfile
 
@@ -14,6 +15,7 @@ from official_recruitment_agent.extension_delivery import (
     default_extension_root,
     extension_status,
     fetch_extension_release,
+    load_extension_pairing,
     open_extension_setup,
     prepare_extension,
 )
@@ -157,6 +159,14 @@ def test_prepare_installs_verified_archive_and_reuses_healthy_files(
     assert reused["changed"] is False
     assert calls == [RELEASE_URL, ARCHIVE_URL, RELEASE_URL]
     assert (root / "executor.js").read_bytes() == b"console.log('ready')"
+    pairing = load_extension_pairing(root)
+    assert pairing["installation_id"].startswith("orainstall_")
+    assert pairing["pairing_secret"].startswith("orapair_")
+    assert pairing["local_agent_url"] == "http://127.0.0.1:8765"
+    if os.name != "nt":
+        assert (
+            root / "agentmesh-installation.json"
+        ).stat().st_mode & 0o777 == 0o600
     assert extension_status(root)["healthy"] is True
 
 
@@ -174,6 +184,7 @@ def test_update_replaces_same_directory_without_losing_install_identity(
         extension_root=root,
         opener=_opener(_release(first_archive), first_archive),
     )
+    original_pairing = load_extension_pairing(root)
 
     updated = prepare_extension(
         BASE_URL,
@@ -187,6 +198,7 @@ def test_update_replaces_same_directory_without_losing_install_identity(
     assert updated["extension_version"] == "0.6.5"
     assert updated["install_directory"] == str(root)
     assert (root / "executor.js").read_bytes() == b"console.log('updated')"
+    assert load_extension_pairing(root) == original_pairing
 
 
 def test_prepare_never_downgrades_a_healthy_install(tmp_path: Path) -> None:
@@ -241,6 +253,7 @@ def test_repair_restores_locally_damaged_extension(tmp_path: Path) -> None:
     root = tmp_path / "extension"
     opener = _opener(release, archive)
     prepare_extension(BASE_URL, extension_root=root, opener=opener)
+    original_pairing = load_extension_pairing(root)
     (root / "executor.js").write_text("damaged", encoding="utf-8")
     assert extension_status(root)["status"] == "repair_required"
 
@@ -254,6 +267,32 @@ def test_repair_restores_locally_damaged_extension(tmp_path: Path) -> None:
     assert repaired["status"] == "ready"
     assert repaired["changed"] is True
     assert (root / "executor.js").read_bytes() == b"console.log('ready')"
+    assert load_extension_pairing(root) == original_pairing
+
+
+def test_repair_restores_pairing_descriptor_from_private_state(
+    tmp_path: Path,
+) -> None:
+    archive = _extension_archive()
+    release = _release(archive)
+    root = tmp_path / "extension"
+    opener = _opener(release, archive)
+    prepare_extension(BASE_URL, extension_root=root, opener=opener)
+    original_pairing = load_extension_pairing(root)
+    (root / "agentmesh-installation.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    assert extension_status(root)["status"] == "repair_required"
+    prepare_extension(
+        BASE_URL,
+        extension_root=root,
+        force=True,
+        opener=opener,
+    )
+
+    assert load_extension_pairing(root) == original_pairing
 
 
 def test_zip_path_traversal_is_rejected(tmp_path: Path) -> None:

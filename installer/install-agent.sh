@@ -2,7 +2,7 @@
 set -eu
 
 BASE_URL="${ORA_INSTALL_BASE_URL:-https://recruit.agentmesh360.com}"
-ADAPTER_VERSION="0.1.3"
+ADAPTER_VERSION="0.1.4"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 INSTALL_ROOT="${ORA_AGENT_HOME:-$HOME/.agentmesh360/official-recruitment}"
 VENV="$INSTALL_ROOT/venv"

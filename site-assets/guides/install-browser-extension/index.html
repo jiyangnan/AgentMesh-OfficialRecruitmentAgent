@@ -28,7 +28,6 @@
         <p class="lead">当前种子用户版本暂不通过 Chrome Web Store 分发。macOS、Windows 和 Linux 使用同一条扩展准备命令；下载、摘要校验、解压和固定目录由本机 Agent 完成。</p>
         <div class="hero-actions">
           <a class="button primary" href="#steps">开始安装</a>
-          <a class="button" href="/downloads/agentmesh-officialrecruitment-extension.zip" download>备用：手动下载 ZIP</a>
         </div>
       </div>
     </section>
@@ -43,7 +42,7 @@
           <li><strong>加载扩展。</strong>点击“加载已解压的扩展程序”。</li>
           <li><strong>选择 Agent 返回的目录。</strong>该目录直接包含 <code>manifest.json</code>、<code>popup.html</code> 和 <code>executor.js</code>。不要选择 ZIP，也不要选择它外面多一层的父目录。</li>
           <li><strong>固定到工具栏。</strong>点击 Chrome 工具栏的扩展图标，把“AgentMesh360 官网申请填写器”固定到工具栏。</li>
-          <li><strong>首次连接三端工作区。</strong>打开扩展，工作台地址保持 <code>https://recruit.agentmesh360.com</code>，输入与本机 Agent 相同的 AgentMesh360 API Key，点击“连接三端工作区”。</li>
+          <li><strong>连接本机 Agent。</strong>打开扩展并点击“连接本机 Agent”。工作台地址和账户 Key 已由本机 Agent 配置，扩展不会要求再次寻找、复制或粘贴。</li>
           <li><strong>打开真实报名页面。</strong>你不需要先回 Web 创建任务。自行打开并登录目标招聘官网，进入当前可见的报名步骤，再点击扩展中的“识别当前步骤”。</li>
         </ol>
         <div class="callout"><strong>固定目录由产品维护。</strong>macOS 使用“资源库/Application Support”，Windows 使用 <code>%LOCALAPPDATA%</code>，Linux 使用用户数据目录。不要手动移动该目录；误删或损坏后让 Agent 运行 <code>ora-workbench extension repair</code>。</div>
@@ -52,7 +51,7 @@
         <h2>安装后如何确认</h2>
         <div class="grid">
           <article class="card"><h3>扩展管理页</h3><p>卡片中应显示“AgentMesh360 官网申请填写器”，并且开关处于启用状态。</p></article>
-          <article class="card"><h3>Chrome 工具栏</h3><p>点击已固定的扩展图标，应能看到“连接三端工作区”或“识别当前步骤”，而不是配对码输入框、“扩展已损坏”或文件缺失。</p></article>
+          <article class="card"><h3>Chrome 工具栏</h3><p>点击已固定的扩展图标，应能看到“连接本机 Agent”或“识别当前步骤”，而不是 API Key、配对码输入框、“扩展已损坏”或文件缺失。</p></article>
         </div>
       </section>
       <section>
@@ -62,7 +61,7 @@
           <li>CLI 校验新版本并更新同一个固定目录；无需重新选择目录。</li>
           <li>打开 <code>chrome://extensions/</code>。</li>
           <li>在扩展卡片上点击“重新加载”。</li>
-          <li>重新打开扩展，确认版本为 0.6.4 或更高，且已有连接仍可恢复。</li>
+          <li>重新打开扩展，确认版本为 0.6.5 或更高，且本机 Agent 连接仍可恢复。</li>
         </ol>
       </section>
       <section class="faq">
@@ -71,7 +70,7 @@
         <details><summary>重启 Chrome 后扩展不见了</summary><p>先检查原解压目录是否被移动、改名或删除，再到扩展管理页确认扩展仍然启用。</p></details>
         <details><summary>Agent 提示扩展需要修复</summary><p>运行 <code>ora-workbench extension repair</code>。CLI 会重新下载并校验官方 ZIP，修复同一个固定目录；完成后在扩展管理页点击“重新加载”。</p></details>
         <details><summary>为什么会看到开发者模式提示？</summary><p>这是 Chrome 对手动加载扩展的正常提示。当前 Early Access 采用这种方式服务少量种子用户，稳定规模化后再评估 Chrome Web Store。</p></details>
-        <details><summary>为什么不再需要配对码？</summary><p>新版扩展只在首次使用时连接同一 AgentMesh360 账户。之后每次从当前招聘页面自动创建 15 分钟短期会话，并把申请和填写证据同步到 Web。</p></details>
+        <details><summary>为什么不需要 API Key 或配对码？</summary><p>新版扩展只在首次使用时连接本机 Agent，由本机 Agent 完成账户校验。之后每次从当前招聘页面代建短期会话，并把申请和填写证据同步到 Web；通用 API Key 不进入扩展。请让本机 Agent 运行准备命令，不要直接下载原始 ZIP。</p></details>
         <details><summary>扩展提示需要先导入标准简历</summary><p>请让本机 Agent 读取你明确指定的标准简历并提交档案提案，再到 Web 工作台确认。扩展不会把招聘页面上的筛选项或表单选项当成你的个人档案。</p></details>
         <details><summary>扩展会替我提交申请吗？</summary><p>不会。附件、验证码、声明、下一步和最终提交仍由你本人完成。</p></details>
       </section>

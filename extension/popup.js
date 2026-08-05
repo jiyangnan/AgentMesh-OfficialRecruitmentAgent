@@ -3,7 +3,6 @@ import {
   evidenceIdempotencyKey,
   evidencePayload,
   mergeLocalProfileResolution,
-  normalizeApiKey,
   normalizeServerUrl,
   observationIdempotencyKey,
   validateFillSession,
@@ -15,6 +14,8 @@ const INSTALLATION_STORAGE_KEY = "ora_installation_id_v1";
 const ACTIVE_SESSION_STORAGE_KEY = "ora_active_assist_session_v1";
 const AUTO_CONNECT_DISABLED_STORAGE_KEY =
   "ora_local_auto_connect_disabled_v1";
+const LOCAL_AGENT_URL = "http://127.0.0.1:8765";
+const INSTALLATION_DESCRIPTOR_FILE = "agentmesh-installation.json";
 const LOCAL_DEVELOPMENT_SERVERS = [
   "http://127.0.0.1:8010",
   "http://127.0.0.1:8000",
@@ -24,8 +25,6 @@ const setup = document.querySelector("#setup");
 const assist = document.querySelector("#assist");
 const connectionForm = document.querySelector("#connection-form");
 const taskForm = document.querySelector("#task-form");
-const serverInput = document.querySelector("#server-url");
-const apiKeyInput = document.querySelector("#api-key");
 const disconnectButton = document.querySelector("#disconnect");
 const review = document.querySelector("#review");
 const targetOrigin = document.querySelector("#target-origin");
@@ -41,8 +40,9 @@ const openWorkbenchButton = document.querySelector("#open-workbench");
 
 let currentTask = null;
 let currentServer = null;
-let currentApiKey = null;
 let currentConnectionMode = null;
+let currentLocalSessionToken = null;
+let currentInstallationDescriptor = null;
 let currentTab = null;
 let currentCapability = null;
 let currentFrameId = null;
@@ -135,11 +135,7 @@ function isLocalDevelopmentServer(value) {
 function connectionLabel() {
   return currentConnectionMode === "local_development"
     ? "已连接本机开发工作台"
-    : "已连接三端工作区";
-}
-
-function updateApiKeyRequirement() {
-  apiKeyInput.required = !isLocalDevelopmentServer(serverInput.value);
+    : "已连接本机 Agent";
 }
 
 async function probeDevelopmentServer(serverUrl) {
@@ -185,10 +181,8 @@ async function autoConnectLocalDevelopment() {
   const serverUrl = candidates.find(Boolean);
   if (!serverUrl) return false;
   currentServer = serverUrl;
-  currentApiKey = null;
   currentConnectionMode = "local_development";
-  serverInput.value = currentServer;
-  updateApiKeyRequirement();
+  currentLocalSessionToken = null;
   await chrome.storage.local.set({
     [CONNECTION_STORAGE_KEY]: {
       server_url: currentServer,
@@ -201,25 +195,115 @@ async function autoConnectLocalDevelopment() {
   return true;
 }
 
-function assistSessionHeaders(idempotencyKey) {
-  const headers = {
+function developmentAssistSessionHeaders(idempotencyKey) {
+  if (currentConnectionMode !== "local_development") {
+    throw new Error("浏览器扩展尚未连接本机 Agent。");
+  }
+  return {
     Accept: "application/json",
     "Content-Type": "application/json",
     "Idempotency-Key": idempotencyKey,
-  };
-  if (currentApiKey) {
-    headers.Authorization = `Bearer ${currentApiKey}`;
-    return headers;
-  }
-  if (currentConnectionMode !== "local_development") {
-    throw new Error("线上工作台需要 AgentMesh360 API Key。");
-  }
-  return {
-    ...headers,
     "X-ORA-Account": "acct-synthetic-demo",
     "X-ORA-Actor": "extension-local",
     "X-ORA-Surface": "web",
   };
+}
+
+function localAgentHeaders(sessionToken = null) {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(sessionToken
+      ? { Authorization: `Bearer ${sessionToken}` }
+      : {}),
+  };
+}
+
+function validInstallationDescriptor(value) {
+  return Boolean(
+    value?.schema_version === 1 &&
+      /^orainstall_[0-9a-f]{32}$/.test(value.installation_id ?? "") &&
+      /^orapair_[A-Za-z0-9_-]{32,96}$/.test(value.pairing_secret ?? "") &&
+      value.local_agent_url === LOCAL_AGENT_URL,
+  );
+}
+
+async function installationDescriptor() {
+  if (currentInstallationDescriptor) return currentInstallationDescriptor;
+  if (!chrome.runtime?.getURL) {
+    throw new Error("扩展缺少本机配对资料，请让 Agent 重新准备扩展。");
+  }
+  try {
+    const response = await fetch(
+      chrome.runtime.getURL(INSTALLATION_DESCRIPTOR_FILE),
+      { cache: "no-store" },
+    );
+    const payload = await response.json();
+    if (!response.ok || !validInstallationDescriptor(payload)) {
+      throw new Error("invalid_descriptor");
+    }
+    currentInstallationDescriptor = payload;
+    return payload;
+  } catch {
+    throw new Error("扩展缺少本机配对资料，请让 Agent 运行 extension repair。");
+  }
+}
+
+async function localAgentRequest(path, payload, sessionToken = null) {
+  const response = await fetch(`${LOCAL_AGENT_URL}${path}`, {
+    method: "POST",
+    headers: localAgentHeaders(sessionToken),
+    cache: "no-store",
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(
+      result?.error?.message ?? "本机 Agent 暂时无法完成扩展连接。",
+    );
+  }
+  return result;
+}
+
+async function persistLocalAgentConnection(result) {
+  if (
+    result?.status !== "connected" ||
+    !/^oralocalsession_[A-Za-z0-9_-]{32,128}$/.test(
+      result.session_token ?? "",
+    ) ||
+    !/^orainstall_[0-9a-f]{32}$/.test(result.installation_id ?? "") ||
+    !Number.isFinite(new Date(result.expires_at).getTime()) ||
+    new Date(result.expires_at).getTime() <= Date.now()
+  ) {
+    throw new Error("本机 Agent 返回的扩展连接无效。");
+  }
+  currentServer = normalizeServerUrl(result.server_url);
+  currentConnectionMode = "local_agent";
+  currentLocalSessionToken = result.session_token;
+  await chrome.storage.local.set({
+    [CONNECTION_STORAGE_KEY]: {
+      server_url: currentServer,
+      mode: currentConnectionMode,
+      local_session_token: currentLocalSessionToken,
+      installation_id: result.installation_id,
+      expires_at: result.expires_at,
+    },
+  });
+  await chrome.storage.local.remove(AUTO_CONNECT_DISABLED_STORAGE_KEY);
+  connection.textContent = connectionLabel();
+  connectedUi(true);
+}
+
+async function connectLocalAgent() {
+  const descriptor = await installationDescriptor();
+  const result = await localAgentRequest("/v1/extension/connect", {
+    installation_id: descriptor.installation_id,
+    pairing_secret: descriptor.pairing_secret,
+  });
+  if (result.installation_id !== descriptor.installation_id) {
+    throw new Error("本机 Agent 返回了其他扩展的连接。");
+  }
+  await persistLocalAgentConnection(result);
 }
 
 async function activeTab() {
@@ -238,6 +322,9 @@ function comparablePageUrl(value) {
 }
 
 async function installationId() {
+  if (currentInstallationDescriptor?.installation_id) {
+    return currentInstallationDescriptor.installation_id;
+  }
   const stored = await chrome.storage.local.get(INSTALLATION_STORAGE_KEY);
   if (stored?.[INSTALLATION_STORAGE_KEY]) {
     return stored[INSTALLATION_STORAGE_KEY];
@@ -249,26 +336,47 @@ async function installationId() {
 
 async function restoreConnection() {
   const stored = await chrome.storage.local.get(CONNECTION_STORAGE_KEY);
-  const value = stored?.[CONNECTION_STORAGE_KEY];
+  let value = stored?.[CONNECTION_STORAGE_KEY];
+  if (value?.api_key) {
+    const sanitized = { ...value };
+    delete sanitized.api_key;
+    value = sanitized;
+    await chrome.storage.local.set({
+      [CONNECTION_STORAGE_KEY]: sanitized,
+    });
+  }
   if (value) {
     try {
       const restoredServer = normalizeServerUrl(value.server_url);
       const localDevelopment = isLocalDevelopmentServer(restoredServer);
-      currentServer = localDevelopment
-        ? await verifiedDevelopmentServer(restoredServer)
-        : restoredServer;
-      currentConnectionMode = localDevelopment
-        ? "local_development"
-        : "production";
-      currentApiKey =
-        !localDevelopment && value.api_key
-          ? normalizeApiKey(value.api_key)
-          : null;
-      if (currentConnectionMode === "production" && !currentApiKey) {
-        throw new Error("线上连接缺少 API Key。");
+      if (localDevelopment) {
+        currentServer = await verifiedDevelopmentServer(restoredServer);
+        currentConnectionMode = "local_development";
+        currentLocalSessionToken = null;
+      } else {
+        if (
+          value.mode !== "local_agent" ||
+          !/^oralocalsession_[A-Za-z0-9_-]{32,128}$/.test(
+            value.local_session_token ?? "",
+          )
+        ) {
+          throw new Error("旧连接需要重新配对。");
+        }
+        const status = await localAgentRequest(
+          "/v1/extension/status",
+          {},
+          value.local_session_token,
+        );
+        if (
+          status.status !== "connected" ||
+          status.installation_id !== value.installation_id
+        ) {
+          throw new Error("本机连接状态无效。");
+        }
+        currentServer = normalizeServerUrl(status.server_url);
+        currentConnectionMode = "local_agent";
+        currentLocalSessionToken = value.local_session_token;
       }
-      serverInput.value = currentServer;
-      updateApiKeyRequirement();
       connection.textContent = connectionLabel();
       connectedUi(true);
       return;
@@ -282,7 +390,6 @@ async function restoreConnection() {
   if (!disabled?.[AUTO_CONNECT_DISABLED_STORAGE_KEY]) {
     if (await autoConnectLocalDevelopment()) return;
   }
-  updateApiKeyRequirement();
   connectedUi(false);
 }
 
@@ -290,49 +397,35 @@ connectionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   message.hidden = true;
   try {
-    const requestedServer = normalizeServerUrl(serverInput.value);
-    const localDevelopment = isLocalDevelopmentServer(requestedServer);
-    currentServer = localDevelopment
-      ? await verifiedDevelopmentServer(requestedServer)
-      : requestedServer;
-    currentConnectionMode = localDevelopment
-      ? "local_development"
-      : "production";
-    currentApiKey =
-      !localDevelopment && apiKeyInput.value.trim()
-        ? normalizeApiKey(apiKeyInput.value)
-        : null;
-    if (currentConnectionMode === "production" && !currentApiKey) {
-      throw new Error("线上工作台需要 AgentMesh360 API Key。");
+    if (!(await autoConnectLocalDevelopment())) {
+      await connectLocalAgent();
     }
-    await chrome.storage.local.set({
-      [CONNECTION_STORAGE_KEY]: {
-        server_url: currentServer,
-        ...(currentApiKey ? { api_key: currentApiKey } : {}),
-        mode: currentConnectionMode,
-      },
-    });
-    await chrome.storage.local.remove(
-      AUTO_CONNECT_DISABLED_STORAGE_KEY,
-    );
-    apiKeyInput.value = "";
-    connection.textContent = connectionLabel();
-    connectedUi(true);
-    showMessage("连接完成。现在打开任意官网报名步骤并选择“识别当前步骤”。");
+    showMessage("已连接本机 Agent。现在可识别当前招聘页面。");
   } catch (error) {
     showMessage(error instanceof Error ? error.message : "连接失败。", true);
   }
 });
 
 disconnectButton.addEventListener("click", async () => {
+  if (currentLocalSessionToken) {
+    try {
+      await localAgentRequest(
+        "/v1/extension/disconnect",
+        {},
+        currentLocalSessionToken,
+      );
+    } catch {
+      // Local storage is still cleared if the Agent is temporarily offline.
+    }
+  }
   await chrome.storage.local.remove(CONNECTION_STORAGE_KEY);
   await chrome.storage.local.set({
     [AUTO_CONNECT_DISABLED_STORAGE_KEY]: true,
   });
   await chrome.storage.session.remove(ACTIVE_SESSION_STORAGE_KEY);
   currentServer = null;
-  currentApiKey = null;
   currentConnectionMode = null;
+  currentLocalSessionToken = null;
   currentTask = null;
   currentCapability = null;
   connection.textContent = "尚未连接 AgentMesh360";
@@ -342,7 +435,7 @@ disconnectButton.addEventListener("click", async () => {
 
 async function createAssistSession(tab) {
   if (!currentServer) {
-    throw new Error("请先连接 AgentMesh360 三端工作区。");
+    throw new Error("请先连接本机 Agent。");
   }
   const installId = await installationId();
   const idempotencyKey = await assistSessionIdempotencyKey(
@@ -351,23 +444,39 @@ async function createAssistSession(tab) {
     undefined,
     refreshFromTaskId,
   );
-  const response = await fetch(`${currentServer}/api/v1/assist-sessions`, {
-    method: "POST",
-    headers: assistSessionHeaders(idempotencyKey),
-    body: JSON.stringify({
-      page_url: tab.url,
-      page_title: tab.title || null,
-      installation_id: installId,
-      expires_in_seconds: 900,
-    }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      payload?.error?.message ??
-        payload?.detail?.message ??
-        "创建当前页面辅助会话失败。",
+  let payload;
+  if (currentConnectionMode === "local_agent") {
+    if (!currentLocalSessionToken) {
+      throw new Error("浏览器扩展需要重新连接本机 Agent。");
+    }
+    payload = await localAgentRequest(
+      "/v1/extension/assist-sessions",
+      {
+        page_url: tab.url,
+        page_title: tab.title || null,
+        idempotency_key: idempotencyKey,
+      },
+      currentLocalSessionToken,
     );
+  } else {
+    const response = await fetch(`${currentServer}/api/v1/assist-sessions`, {
+      method: "POST",
+      headers: developmentAssistSessionHeaders(idempotencyKey),
+      body: JSON.stringify({
+        page_url: tab.url,
+        page_title: tab.title || null,
+        installation_id: installId,
+        expires_in_seconds: 900,
+      }),
+    });
+    payload = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        payload?.error?.message ??
+          payload?.detail?.message ??
+          "创建当前页面辅助会话失败。",
+      );
+    }
   }
   const task = validateFillSession(payload.result.task, tab.url);
   const active = {
@@ -434,7 +543,13 @@ async function restoreActiveSession(tab) {
 async function hydrateLocalProfileFields(task) {
   const questionCount = task.plan?.profile_questions?.length ?? 0;
   localProfileResolutionError = null;
-  if (!questionCount || !currentApiKey) return task;
+  if (
+    !questionCount ||
+    currentConnectionMode !== "local_agent" ||
+    !currentLocalSessionToken
+  ) {
+    return task;
+  }
   try {
     const response = await fetch(
       "http://127.0.0.1:8765/v1/fill-tasks/resolved-fields",
@@ -443,7 +558,7 @@ async function hydrateLocalProfileFields(task) {
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
-          Authorization: `Bearer ${currentApiKey}`,
+          Authorization: `Bearer ${currentLocalSessionToken}`,
         },
         cache: "no-store",
         body: JSON.stringify({ fill_task_id: task.fill_task_id }),
@@ -1040,7 +1155,5 @@ openWorkbenchButton.addEventListener("click", async () => {
     showMessage("工作台暂时无法打开，请稍后重试。", true);
   }
 });
-
-serverInput.addEventListener("input", updateApiKeyRequirement);
 
 void restorePopupState();

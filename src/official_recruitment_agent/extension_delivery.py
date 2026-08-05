@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -20,7 +21,9 @@ import zipfile
 EXTENSION_RELEASE_PATH = (
     "/downloads/agentmesh-officialrecruitment-extension-release.json"
 )
-EXTENSION_STATE_SCHEMA_VERSION = 1
+EXTENSION_STATE_SCHEMA_VERSION = 2
+EXTENSION_PAIRING_SCHEMA_VERSION = 1
+EXTENSION_PAIRING_FILE = "agentmesh-installation.json"
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 256
@@ -28,6 +31,8 @@ REQUIRED_EXTENSION_FILES = frozenset(
     {"manifest.json", "popup.html", "executor.js"}
 )
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+INSTALLATION_ID_PATTERN = re.compile(r"^orainstall_[0-9a-f]{32}$")
+PAIRING_SECRET_PATTERN = re.compile(r"^orapair_[A-Za-z0-9_-]{32,96}$")
 
 
 class ExtensionDeliveryError(ValueError):
@@ -77,6 +82,107 @@ def default_extension_root(
 
 def extension_state_path(extension_root: Path) -> Path:
     return extension_root.parent / "extension-install.json"
+
+
+def _new_extension_pairing() -> dict[str, Any]:
+    return {
+        "schema_version": EXTENSION_PAIRING_SCHEMA_VERSION,
+        "installation_id": f"orainstall_{secrets.token_hex(16)}",
+        "pairing_secret": f"orapair_{secrets.token_urlsafe(32)}",
+        "local_agent_url": "http://127.0.0.1:8765",
+    }
+
+
+def _validate_extension_pairing(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ExtensionDeliveryError("扩展本机配对资料无效。")
+    expected_keys = {
+        "schema_version",
+        "installation_id",
+        "pairing_secret",
+        "local_agent_url",
+    }
+    if set(value) != expected_keys:
+        raise ExtensionDeliveryError("扩展本机配对资料字段无效。")
+    installation_id = value.get("installation_id")
+    pairing_secret = value.get("pairing_secret")
+    if (
+        value.get("schema_version") != EXTENSION_PAIRING_SCHEMA_VERSION
+        or not isinstance(installation_id, str)
+        or not INSTALLATION_ID_PATTERN.fullmatch(installation_id)
+        or not isinstance(pairing_secret, str)
+        or not PAIRING_SECRET_PATTERN.fullmatch(pairing_secret)
+        or value.get("local_agent_url") != "http://127.0.0.1:8765"
+    ):
+        raise ExtensionDeliveryError("扩展本机配对资料内容无效。")
+    return dict(value)
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("json_not_object")
+    return payload
+
+
+def load_extension_pairing(extension_root: Path) -> dict[str, Any]:
+    root = extension_root.expanduser()
+    try:
+        state = _read_json_object(extension_state_path(root))
+        if state.get("schema_version") != EXTENSION_STATE_SCHEMA_VERSION:
+            raise ValueError("state_schema")
+        state_pairing = _validate_extension_pairing(state.get("pairing"))
+        descriptor_pairing = _validate_extension_pairing(
+            _read_json_object(root / EXTENSION_PAIRING_FILE)
+        )
+        if state_pairing != descriptor_pairing:
+            raise ValueError("pairing_mismatch")
+        return state_pairing
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        ExtensionDeliveryError,
+    ) as exc:
+        raise ExtensionDeliveryError(
+            "扩展本机配对资料缺失或已损坏，请运行 extension repair。"
+        ) from exc
+
+
+def _existing_extension_pairing(extension_root: Path) -> dict[str, Any]:
+    try:
+        state = _read_json_object(extension_state_path(extension_root))
+        return _validate_extension_pairing(state.get("pairing"))
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        ExtensionDeliveryError,
+    ):
+        try:
+            return _validate_extension_pairing(
+                _read_json_object(extension_root / EXTENSION_PAIRING_FILE)
+            )
+        except (
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            ExtensionDeliveryError,
+        ):
+            return _new_extension_pairing()
+
+
+def _write_pairing_descriptor(
+    extension_root: Path,
+    pairing: dict[str, Any],
+) -> None:
+    path = extension_root / EXTENSION_PAIRING_FILE
+    path.write_text(
+        json.dumps(pairing, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    if os.name != "nt":
+        path.chmod(0o600)
 
 
 def _valid_sha256(value: object) -> bool:
@@ -314,11 +420,14 @@ def extension_status(extension_root: Path) -> dict[str, Any]:
         if not isinstance(expected_files, list):
             raise ValueError("state_files")
         version = _read_extension_version(root)
+        pairing = load_extension_pairing(root)
         actual_files = _file_inventory(root)
         if actual_files != expected_files:
             raise ValueError("file_inventory")
         if version != state.get("extension_version"):
             raise ValueError("version_mismatch")
+        if state.get("pairing") != pairing:
+            raise ValueError("pairing_mismatch")
     except (OSError, ValueError, json.JSONDecodeError, ExtensionDeliveryError):
         return {**base, "status": "repair_required", "healthy": False}
     return {
@@ -340,6 +449,7 @@ def prepare_extension(
     root = (extension_root or default_extension_root()).expanduser()
     release = fetch_extension_release(base_url, opener=opener)
     current = extension_status(root)
+    pairing = _existing_extension_pairing(root)
     if (
         current.get("healthy") is True
         and _version_key(str(current["extension_version"]))
@@ -386,6 +496,7 @@ def prepare_extension(
         version = _read_extension_version(staging)
         if version != release["extension_version"]:
             raise ExtensionDeliveryError("扩展版本与官方版本清单不一致。")
+        _write_pairing_descriptor(staging, pairing)
         inventory = _file_inventory(staging)
 
         if root.exists():
@@ -400,6 +511,7 @@ def prepare_extension(
                 "artifact_sha256": release["artifact_sha256"],
                 "artifact_bytes": release["artifact_bytes"],
                 "source_manifest_url": release["manifest_url"],
+                "pairing": pairing,
                 "files": inventory,
             },
         )

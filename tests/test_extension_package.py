@@ -30,12 +30,14 @@ def test_extension_package_is_installable_and_contains_no_secret(
     )
     summary = json.loads(completed.stdout)
 
-    assert summary["version"] == "0.6.4"
+    assert summary["version"] == "0.6.5"
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
         manifest = json.loads(archive.read("manifest.json"))
         payload = b"\n".join(archive.read(name) for name in names)
+        popup_html = archive.read("popup.html").decode("utf-8")
+        popup_js = archive.read("popup.js").decode("utf-8")
     assert {
         "manifest.json",
         "popup.html",
@@ -54,6 +56,12 @@ def test_extension_package_is_installable_and_contains_no_secret(
         "https://agentmesh360.com/*",
         "https://*.agentmesh360.com/*",
     ]
+    assert "连接本机 Agent" in popup_html
+    assert 'id="api-key"' not in popup_html
+    assert 'type="password"' not in popup_html
+    assert "currentApiKey" not in popup_js
+    assert "normalizeApiKey" not in popup_js
+    assert "agentmesh-installation.json" not in names
     assert b"ORA_EXTENSION_SIGNING_SECRET" not in payload
     assert b"X-Service-Token" not in payload
 
@@ -76,7 +84,7 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
         'official_recruitment_agent-$ADAPTER_VERSION-py3-none-any.whl"'
         in installer
     )
-    assert 'ADAPTER_VERSION="0.1.3"' in installer
+    assert 'ADAPTER_VERSION="0.1.4"' in installer
     assert '"$VENV/bin/python" -m pip install' in installer
     assert "AGENTMESH_API_KEY=" not in installer
     assert "jobagent_live_" not in installer
@@ -91,7 +99,7 @@ def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
     assert "AgentMesh360\\OfficialRecruitment" in installer
     assert "Scripts\\ora-workbench.exe" in installer
     assert "ora-workbench.cmd" in installer
-    assert '$AdapterVersion = "0.1.3"' in installer
+    assert '$AdapterVersion = "0.1.4"' in installer
     assert (
         'official_recruitment_agent-$AdapterVersion-py3-none-any.whl'
         in installer
