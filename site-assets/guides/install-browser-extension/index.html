@@ -31,7 +31,7 @@
       <div class="container">
         <p class="eyebrow">AgentMesh360 · Chrome 扩展安装</p>
         <h1>根据你的网络条件，选择合适的官方安装方式。</h1>
-        <p class="lead">能够访问 Chrome Web Store 的用户使用商店安装并自动更新；无法访问商店的中国大陆用户，可从 AgentMesh360 工作台直接下载同一官方版本的 ZIP。</p>
+        <p class="lead">官方 ZIP 0.6.7 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。</p>
         <div class="hero-actions">
           <a class="button primary" href="#direct-download">下载官方 ZIP</a>
           <a class="button secondary" href="#store-install">查看商店安装</a>
@@ -46,14 +46,9 @@
           <li><strong>本机连接组件会随 CLI 一起注册。</strong>无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。</li>
         </ol>
       </section>
-      <section id="store-install">
-        <h2>方式一：Chrome Web Store</h2>
-        <p>适合海外用户和能够访问 Chrome Web Store 的用户。商店版本审核通过后，工作台会开放正式入口；安装后可由 Chrome 自动接收后续更新。</p>
-        <div class="callout"><strong>当前状态：商店审核中。</strong>审核完成前请使用下方的官方 ZIP。工作台不会把尚未公开的商店页面伪装成可用入口。</div>
-      </section>
       <section id="direct-download">
-        <h2>方式二：工作台直接下载官方 ZIP</h2>
-        <p>适合无法访问 Chrome Web Store 的中国大陆用户。macOS、Windows 和 Linux 使用同一份扩展 ZIP。</p>
+        <h2>方式一：立即下载官方 ZIP 0.6.7</h2>
+        <p>当前已经可用，适合所有用户；macOS、Windows 和 Linux 使用同一份扩展 ZIP。</p>
         <div class="hero-actions">
           <a class="button primary" href="/downloads/agentmesh-officialrecruitment-extension.zip" download>下载官方扩展 ZIP</a>
           <a class="button secondary" href="/downloads/agentmesh-officialrecruitment-extension-release.json" target="_blank" rel="noreferrer">查看版本与 SHA-256</a>
@@ -69,6 +64,11 @@
           <li><strong>打开真实报名页面。</strong>你不需要先回 Web 创建任务。自行打开并登录目标招聘官网，进入当前可见的报名步骤，再点击扩展中的“识别当前步骤”。</li>
         </ol>
         <div class="callout"><strong>需要自动修复时交给 Agent。</strong>也可以让本机 Agent 运行 <code>ora-workbench extension prepare</code>，它会校验官方版本并准备固定目录；误删或损坏后运行 <code>ora-workbench extension repair</code>。</div>
+      </section>
+      <section id="store-install">
+        <h2>方式二：Chrome Web Store（审核中）</h2>
+        <p>适合能够访问 Chrome Web Store 并希望由 Chrome 自动更新的用户。商店版本审核通过后，工作台会开放正式入口。</p>
+        <div class="callout"><strong>当前状态：商店审核中。</strong>审核完成前请使用上方已经发布的官方 ZIP。工作台不会把尚未公开的商店页面伪装成可用入口。</div>
       </section>
       <section>
         <h2>安装后如何确认</h2>
