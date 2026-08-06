@@ -3,32 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>官网申请填写器</title>
+    <title data-i18n="官网申请填写器">官网申请填写器</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header>
       <span class="mark">AM</span>
-      <span>
-        <strong>官网申请填写器</strong>
-        <small id="connection">尚未连接 AgentMesh360</small>
+      <span class="product-name">
+        <strong data-i18n="官网申请填写器">官网申请填写器</strong>
+        <small id="connection" data-i18n="尚未连接 AgentMesh360">尚未连接 AgentMesh360</small>
       </span>
-      <button id="disconnect" class="header-button" type="button" hidden>
-        断开
-      </button>
+      <span class="header-tools">
+        <span class="language-switcher" data-i18n-aria="语言">
+          <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+          <button type="button" data-locale="en" aria-pressed="false">EN</button>
+          <button type="button" data-locale="ja" aria-pressed="false">日</button>
+          <button type="button" data-locale="ko" aria-pressed="false">한</button>
+        </span>
+        <button id="disconnect" class="header-button" type="button" hidden data-i18n="断开">
+          断开
+        </button>
+      </span>
     </header>
     <main>
       <section id="setup">
         <form id="connection-form">
-          <button class="primary" type="submit">连接本机 Agent</button>
+          <button class="primary" type="submit" data-i18n="连接本机 Agent">连接本机 Agent</button>
         </form>
-        <p class="setup-note">
+        <p class="setup-note" data-i18n="本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。">
           本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。
         </p>
       </section>
       <section id="assist" hidden>
         <form id="task-form">
-          <button id="observe" class="primary" type="submit">
+          <button id="observe" class="primary" type="submit" data-i18n="识别当前步骤">
             识别当前步骤
           </button>
         </form>
@@ -36,32 +44,32 @@
       <section id="review" hidden>
         <div class="summary">
           <span>
-            <small id="step-label">当前步骤</small>
+            <small id="step-label" data-i18n="当前步骤">当前步骤</small>
             <strong id="target-origin"></strong>
           </span>
           <span class="count" id="field-count">0</span>
         </div>
         <div id="field-list" class="field-list"></div>
-        <p class="boundary">
+        <p class="boundary" data-i18n="附件、验证码、声明、下一步和最终提交保持手动。">
           附件、验证码、声明、下一步和最终提交保持手动。
         </p>
         <label class="review-approval">
           <input id="review-approved" type="checkbox" disabled />
-          <span>我已核对以上预览</span>
+          <span data-i18n="我已核对以上预览">我已核对以上预览</span>
         </label>
         <div class="actions">
-          <button id="undo" class="secondary" type="button" disabled>
+          <button id="undo" class="secondary" type="button" disabled data-i18n="撤销本次填写">
             撤销本次填写
           </button>
-          <button id="execute" class="primary" type="button" disabled>
+          <button id="execute" class="primary" type="button" disabled data-i18n="确认填写">
             确认填写
           </button>
         </div>
       </section>
       <p id="message" class="message" hidden></p>
-      <nav class="popup-footer" aria-label="工作台入口">
+      <nav class="popup-footer" aria-label="工作台入口" data-i18n-aria="工作台入口">
         <button id="open-workbench" class="workbench-link" type="button" disabled>
-          <span>前往工作台</span>
+          <span data-i18n="前往工作台">前往工作台</span>
           <span aria-hidden="true">→</span>
         </button>
       </nav>

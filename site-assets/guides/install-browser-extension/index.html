@@ -13,10 +13,16 @@
 <body>
   <header class="site-nav">
     <div class="container nav-inner">
-      <a class="brand" href="/">AgentMesh-OfficialRecruitment</a>
+      <a class="brand" href="/" data-guide-local-link>AgentMesh-OfficialRecruitment</a>
       <nav class="nav-links" aria-label="页面导航">
-        <a href="/app/">返回工作台</a>
-        <a href="https://agentmesh360.com/">AgentMesh360</a>
+        <a href="/app/" data-guide-local-link>返回工作台</a>
+        <a href="https://agentmesh360.com/" data-agentmesh-link>AgentMesh360</a>
+        <span class="guide-languages" aria-label="语言">
+          <button type="button" data-guide-locale="zh-CN">中</button>
+          <button type="button" data-guide-locale="en">EN</button>
+          <button type="button" data-guide-locale="ja">日</button>
+          <button type="button" data-guide-locale="ko">한</button>
+        </span>
       </nav>
     </div>
   </header>
@@ -77,7 +83,7 @@
           <li>Chrome 商店安装的用户由 Chrome 自动更新，无需重新加载目录。</li>
           <li>ZIP 安装用户先退出正在进行的辅助填写，让 Agent 运行 <code>ora-workbench extension update</code>。</li>
           <li>Agent 校验新版本并更新同一个固定目录；随后打开 <code>chrome://extensions/</code>，在扩展卡片上点击“重新加载”。</li>
-          <li>重新打开扩展，确认版本为 0.6.6 或更高，且本机 Agent 连接仍可恢复。</li>
+          <li>重新打开扩展，确认版本为 0.6.7 或更高，且本机 Agent 连接仍可恢复。</li>
         </ol>
       </section>
       <section class="faq">
@@ -93,7 +99,7 @@
       <section>
         <div class="related">
           <h2>安装完成</h2>
-          <p>打开一个真实招聘页面并使用扩展；完成识别或填写后，再到 <a href="/app/">AgentMesh-OfficialRecruitment 工作台</a> 查看自动建立的申请和证据。</p>
+          <p>打开一个真实招聘页面并使用扩展；完成识别或填写后，再到 <a href="/app/" data-guide-local-link>AgentMesh-OfficialRecruitment 工作台</a> 查看自动建立的申请和证据。</p>
         </div>
       </section>
     </article>
@@ -101,8 +107,48 @@
   <footer class="site-footer">
     <div class="container footer-inner">
       <span>AgentMesh-OfficialRecruitment · by AgentMesh360</span>
-      <div class="footer-links"><a href="/">产品首页</a><a href="/app/">工作台</a></div>
+      <div class="footer-links"><a href="/" data-guide-local-link>产品首页</a><a href="/app/" data-guide-local-link>工作台</a></div>
     </div>
   </footer>
+  <style>
+    .guide-languages {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      border-left: 1px solid var(--line, #d8ded9);
+      padding-left: 0.55rem;
+    }
+    .guide-languages button {
+      appearance: none;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      min-width: 2rem;
+      padding: 0.35rem 0.3rem;
+    }
+    .guide-languages button.active {
+      border-bottom-color: #ef7622;
+      color: #174a3f;
+      font-weight: 700;
+    }
+    @media (max-width: 720px) {
+      .nav-inner,
+      .nav-links {
+        align-items: flex-start;
+      }
+      .nav-links {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .guide-languages {
+        flex-basis: 100%;
+        justify-content: flex-end;
+      }
+    }
+  </style>
+  <script type="module" src="./guide-i18n.js"></script>
 </body>
 </html>

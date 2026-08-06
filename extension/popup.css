@@ -24,15 +24,42 @@ header {
   background: #183f37;
 }
 
-header > span:nth-child(2) {
+.product-name {
   min-width: 0;
   flex: 1;
-}
-
-header > span:last-child {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.header-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.language-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.language-switcher button {
+  min-height: 20px;
+  padding: 0 3px;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  font-size: 8px;
+}
+
+.language-switcher button[aria-pressed="true"] {
+  color: #fff;
+  border-bottom-color: #e8782b;
 }
 
 .header-button {

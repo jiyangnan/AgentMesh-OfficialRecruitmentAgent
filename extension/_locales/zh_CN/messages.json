@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "AgentMesh-OfficialRecruitment" },
+  "extensionDescription": { "message": "连接 Agent、Chrome 与 Web，识别并辅助填写当前官网招聘页面" },
+  "extensionActionTitle": { "message": "官网申请填写器" }
+}

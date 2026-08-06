@@ -60,12 +60,20 @@ def _extension_archive(
                     "manifest_version": 3,
                     "name": "AgentMesh360 官网申请填写器",
                     "version": version,
+                    "default_locale": "zh_CN",
                 },
                 ensure_ascii=False,
             ),
         )
         archive.writestr("popup.html", "<main>ready</main>")
+        archive.writestr("popup.js", "console.log('popup')")
+        archive.writestr("i18n.js", "export const ready = true")
         archive.writestr("executor.js", executor)
+        for locale in ("zh_CN", "en", "ja", "ko"):
+            archive.writestr(
+                f"_locales/{locale}/messages.json",
+                json.dumps({"extensionName": {"message": "test"}}),
+            )
         for name, payload in (extra_files or {}).items():
             archive.writestr(name, payload)
     return output.getvalue()

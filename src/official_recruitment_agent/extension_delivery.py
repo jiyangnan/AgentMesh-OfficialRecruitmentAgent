@@ -29,7 +29,17 @@ MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 256
 REQUIRED_EXTENSION_FILES = frozenset(
-    {"manifest.json", "popup.html", "executor.js"}
+    {
+        "manifest.json",
+        "popup.html",
+        "popup.js",
+        "i18n.js",
+        "executor.js",
+        "_locales/zh_CN/messages.json",
+        "_locales/en/messages.json",
+        "_locales/ja/messages.json",
+        "_locales/ko/messages.json",
+    }
 )
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 INSTALLATION_ID_PATTERN = re.compile(r"^orainstall_[0-9a-f]{32}$")

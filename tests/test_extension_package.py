@@ -41,7 +41,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
     )
     summary = json.loads(completed.stdout)
 
-    assert summary["version"] == "0.6.6"
+    assert summary["version"] == "0.6.7"
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
@@ -53,8 +53,13 @@ def test_extension_package_is_installable_and_contains_no_secret(
         "manifest.json",
         "popup.html",
         "popup.js",
+        "i18n.js",
         "protocol.js",
         "executor.js",
+        "_locales/zh_CN/messages.json",
+        "_locales/en/messages.json",
+        "_locales/ja/messages.json",
+        "_locales/ko/messages.json",
     }.issubset(names)
     assert manifest["manifest_version"] == 3
     assert manifest["permissions"] == [
@@ -64,7 +69,8 @@ def test_extension_package_is_installable_and_contains_no_secret(
         "storage",
     ]
     assert manifest["key"]
-    assert manifest["name"] == "AgentMesh-OfficialRecruitment"
+    assert manifest["name"] == "__MSG_extensionName__"
+    assert manifest["default_locale"] == "zh_CN"
     assert _extension_id(manifest["key"]) == OFFICIAL_CHROME_EXTENSION_ID
     assert manifest["host_permissions"] == [
         "http://127.0.0.1:8765/*",

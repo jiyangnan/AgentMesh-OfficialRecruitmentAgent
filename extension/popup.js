@@ -8,6 +8,9 @@ import {
   validateFillSession,
   validateFillTask,
 } from "./protocol.js";
+import { initializeI18n, locale, localizeMessage, t } from "./i18n.js";
+
+await initializeI18n();
 
 const CONNECTION_STORAGE_KEY = "ora_connection_v1";
 const INSTALLATION_STORAGE_KEY = "ora_installation_id_v1";
@@ -52,8 +55,12 @@ let localProfileResolutionError = null;
 
 function showMessage(text, error = false) {
   message.hidden = false;
-  message.textContent = text;
+  message.textContent = localizeMessage(text);
   message.classList.toggle("error", error);
+}
+
+function setConnection(source, values = {}) {
+  connection.textContent = t(source, values);
 }
 
 function reviewKey(task) {
@@ -116,6 +123,7 @@ function workbenchUrl(serverUrl) {
   const url = new URL(serverUrl);
   url.pathname = "/app/";
   url.search = "";
+  if (locale() !== "zh-CN") url.searchParams.set("lang", locale());
   url.hash = "";
   return url.toString();
 }
@@ -135,8 +143,8 @@ function isLocalDevelopmentServer(value) {
 
 function connectionLabel() {
   return currentConnectionMode === "local_development"
-    ? "已连接本机开发工作台"
-    : "已连接本机 Agent";
+    ? t("已连接本机开发工作台")
+    : t("已连接本机 Agent");
 }
 
 async function probeDevelopmentServer(serverUrl) {
@@ -473,7 +481,7 @@ disconnectButton.addEventListener("click", async () => {
   currentLocalSessionToken = null;
   currentTask = null;
   currentCapability = null;
-  connection.textContent = "尚未连接 AgentMesh360";
+  setConnection("尚未连接 AgentMesh360");
   connectedUi(false);
   showMessage("本机扩展连接已清除。");
 });
@@ -619,8 +627,8 @@ async function hydrateLocalProfileFields(task) {
   } catch (error) {
     localProfileResolutionError =
       error instanceof Error
-        ? error.message
-        : "本机 Agent 尚未启动，暂时无法读取已确认资料。";
+        ? localizeMessage(error.message)
+        : t("本机 Agent 尚未启动，暂时无法读取已确认资料。");
     return task;
   }
 }
@@ -633,15 +641,17 @@ function restoreTaskUi(task) {
   renderTask(task);
   if (task.status === "executed_locally") {
     const questionCount = task.plan?.profile_questions?.length ?? 0;
-    connection.textContent = questionCount
-      ? `第 ${task.plan.step_index ?? 1} 步待补档案`
-      : `第 ${task.plan.step_index ?? 1} 步已填写`;
+    setConnection(questionCount ? "第 {step} 步待补档案" : "第 {step} 步已填写", {
+      step: task.plan.step_index ?? 1,
+    });
     const filledCount = task.plan?.last_local_evidence?.filled_count;
     undoButton.disabled =
       currentFrameId === null || filledCount === 0;
     showMessage(
       questionCount
-        ? `已有信息已经填写，但本步骤仍有 ${questionCount} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。`
+        ? t("已有信息已经填写，但本步骤仍有 {count} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。", {
+            count: questionCount,
+          })
         : currentFrameId === null
         ? "请重新识别当前步骤后再撤销填写。"
         : filledCount === 0
@@ -651,27 +661,28 @@ function restoreTaskUi(task) {
     return;
   }
   if (task.status === "ready" || task.status === "previewed") {
-    connection.textContent =
-      `第 ${task.plan.step_index ?? 1} 步待确认`;
+    setConnection("第 {step} 步待确认", { step: task.plan.step_index ?? 1 });
     offerReviewApproval(task);
     return;
   }
   if (task.status === "manual_only") {
-    connection.textContent =
-      `第 ${task.plan.step_index ?? 1} 步需手动处理`;
+    setConnection("第 {step} 步需手动处理", {
+      step: task.plan.step_index ?? 1,
+    });
     const questionCount = task.plan?.profile_questions?.length ?? 0;
     showMessage(
       questionCount
-        ? `本步骤尚未完成：发现 ${questionCount} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。`
+        ? t("本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。", {
+            count: questionCount,
+          })
         : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
     );
     return;
   }
   review.hidden = true;
-  connection.textContent =
-    task.status === "undone_locally"
-      ? "当前步骤已撤销"
-      : "等待识别当前步骤";
+  setConnection(
+    task.status === "undone_locally" ? "当前步骤已撤销" : "等待识别当前步骤",
+  );
 }
 
 async function restorePopupState() {
@@ -735,7 +746,7 @@ taskForm.addEventListener("submit", async (event) => {
   review.hidden = true;
   resetReviewApproval();
   undoButton.disabled = true;
-  connection.textContent = "正在识别当前步骤";
+  setConnection("正在识别当前步骤");
   try {
     currentTab = await activeTab();
     const sessionTask =
@@ -764,15 +775,17 @@ taskForm.addEventListener("submit", async (event) => {
         currentTask.status = "previewed";
       }
       if (currentTask.status === "executed_locally") {
-        connection.textContent =
-          `第 ${currentTask.plan.step_index ?? 1} 步已填写`;
+        setConnection("第 {step} 步已填写", {
+          step: currentTask.plan.step_index ?? 1,
+        });
         undoButton.disabled = false;
         showMessage(
           "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。",
         );
       } else {
-        connection.textContent =
-          `第 ${currentTask.plan.step_index ?? 1} 步待确认`;
+        setConnection("第 {step} 步待确认", {
+          step: currentTask.plan.step_index ?? 1,
+        });
         offerReviewApproval(currentTask);
         const questionCount =
           currentTask.plan.profile_questions?.length ?? 0;
@@ -783,29 +796,39 @@ taskForm.addEventListener("submit", async (event) => {
             0,
           );
           showMessage(
-            `档案还有 ${pendingCount} 条结构化记录未出现在页面。先建立空白记录，系统会重新生成完整预览，再由你确认填写。`,
+            t("档案还有 {count} 条结构化记录未出现在页面。先建立空白记录，系统会重新生成完整预览，再由你确认填写。", {
+              count: pendingCount,
+            }),
           );
         } else if (questionCount) {
           showMessage(
             localProfileResolutionError
-              ? `${localProfileResolutionError} 当前仍有 ${questionCount} 个档案问题未解决。`
-              : `可先填写已有信息；本步骤另有 ${questionCount} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。`,
+              ? t("{error} 当前仍有 {count} 个档案问题未解决。", {
+                  error: localProfileResolutionError,
+                  count: questionCount,
+                })
+              : t("可先填写已有信息；本步骤另有 {count} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。", {
+                  count: questionCount,
+                }),
           );
         }
       }
     } else {
-      connection.textContent =
-        `第 ${currentTask.plan.step_index ?? 1} 步需手动处理`;
+      setConnection("第 {step} 步需手动处理", {
+        step: currentTask.plan.step_index ?? 1,
+      });
       const questionCount =
         currentTask.plan.profile_questions?.length ?? 0;
       showMessage(
         questionCount
-          ? `本步骤尚未完成：发现 ${questionCount} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。`
+          ? t("本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。", {
+              count: questionCount,
+            })
           : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
       );
     }
   } catch (error) {
-    connection.textContent = "识别失败";
+    setConnection("识别失败");
     showMessage(error instanceof Error ? error.message : "识别失败。", true);
   }
 });
@@ -877,7 +900,7 @@ async function discoverCurrentStep(tab) {
 function renderTask(task) {
   resetReviewApproval();
   const stepIndex = task.plan.step_index ?? 1;
-  stepLabel.textContent = `第 ${stepIndex} 步`;
+  stepLabel.textContent = t("第 {step} 步", { step: stepIndex });
   targetOrigin.textContent = new URL(
     task.plan.frame_url ?? task.form_url,
   ).host;
@@ -896,13 +919,17 @@ function renderTask(task) {
     (total, item) => total + Number(item.pending_count),
     0,
   );
-  fieldCount.textContent = `可填 ${task.plan.fields.length} / ${displayFields.length}${
-    pendingRecordCount ? ` · 待新增 ${pendingRecordCount} 条` : ""
-  }`;
-  fieldCount.title = "本次可自动填写字段数 / 当前页面识别字段总数";
+  fieldCount.textContent = t("可填 {fillable} / {total}{pending}", {
+    fillable: task.plan.fields.length,
+    total: displayFields.length,
+    pending: pendingRecordCount
+      ? t(" · 待新增 {count} 条", { count: pendingRecordCount })
+      : "",
+  });
+  fieldCount.title = t("本次可自动填写字段数 / 当前页面识别字段总数");
   executeButton.textContent = repeatGroups.length
-    ? "建立缺少的记录"
-    : "确认填写";
+    ? t("建立缺少的记录")
+    : t("确认填写");
   const repeatRows = repeatGroups.map((group) => {
     const row = document.createElement("div");
     row.className = "field-row field-row--review";
@@ -911,7 +938,7 @@ function renderTask(task) {
     const reason = document.createElement("small");
     const value = document.createElement("code");
     name.textContent = group.label;
-    reason.textContent = "先建立空白记录，随后重新生成完整预览";
+    reason.textContent = t("先建立空白记录，随后重新生成完整预览");
     value.textContent = `${group.observed_count} → ${group.desired_count}`;
     label.append(name, reason);
     row.append(label, value);
@@ -926,17 +953,17 @@ function renderTask(task) {
     const reason = document.createElement("small");
     const value = document.createElement("code");
     name.textContent =
-      field.site_label || field.profile_field || "待人工处理字段";
+      field.site_label || field.profile_field || t("待人工处理字段");
     const statusCopy = {
-      fill: ["将从已确认档案填写", field.display_value ?? field.value ?? ""],
-      missing: ["标准简历未提供该信息", "待补充"],
-      manual: ["此字段保留手动处理", "手动"],
-      unmapped: ["尚未建立可靠字段映射", "未识别"],
-      review: ["需要核对后再处理", "待核对"],
+      fill: [t("将从已确认档案填写"), field.display_value ?? field.value ?? ""],
+      missing: [t("标准简历未提供该信息"), t("待补充")],
+      manual: [t("此字段保留手动处理"), t("手动")],
+      unmapped: [t("尚未建立可靠字段映射"), t("未识别")],
+      review: [t("需要核对后再处理"), t("待核对")],
     };
     const [reasonText, valueText] = statusCopy[action] ?? [
-      "需要人工处理",
-      "待处理",
+      t("需要人工处理"),
+      t("待处理"),
     ];
     reason.textContent = reasonText;
     value.textContent = valueText;
@@ -948,7 +975,7 @@ function renderTask(task) {
   if (!rows.length) {
     const row = document.createElement("div");
     row.className = "field-row";
-    row.textContent = "当前步骤没有可识别字段";
+    row.textContent = t("当前步骤没有可识别字段");
     rows.push(row);
   }
   fieldList.replaceChildren(...rows);
@@ -989,7 +1016,7 @@ executeButton.addEventListener("click", async () => {
       currentTask = null;
       currentCapability = null;
       review.hidden = true;
-      connection.textContent = "个人档案已有更新";
+      setConnection("个人档案已有更新");
       showMessage(
         "本次没有填写。请重新选择“识别当前步骤”，核对新计划后再补填空字段。",
       );
@@ -998,13 +1025,13 @@ executeButton.addEventListener("click", async () => {
     if (latestTask.version !== currentTask.version) {
       currentTask = validateFillTask(latestTask, currentTab.url);
       renderTask(currentTask);
-      connection.textContent = "填写计划已有变化";
+      setConnection("填写计划已有变化");
       showMessage("本次没有填写。请重新核对当前步骤的最新计划。", true);
       return;
     }
     const repeatGroups = pendingRepeatGroups(currentTask);
     if (repeatGroups.length) {
-      connection.textContent = "正在建立缺少的记录";
+      setConnection("正在建立缺少的记录");
       await injectExecutor(currentTab.id, { frameIds: [currentFrameId] });
       const [preparation] = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id, frameIds: [currentFrameId] },
@@ -1042,13 +1069,19 @@ executeButton.addEventListener("click", async () => {
         });
         currentTask.status = "previewed";
       }
-      connection.textContent =
-        `第 ${currentTask.plan.step_index ?? 1} 步待确认`;
+      setConnection("第 {step} 步待确认", {
+        step: currentTask.plan.step_index ?? 1,
+      });
       const questionCount =
         currentTask.plan.profile_questions?.length ?? 0;
       showMessage(questionCount
-        ? `已建立 ${preparationResult.added_count} 条空白记录。请核对完整预览并填写已有信息；本步骤仍有 ${questionCount} 个档案问题，之后必须回到本机 Agent 集中回答。`
-        : `已建立 ${preparationResult.added_count} 条空白记录。请核对更新后的完整预览，再选择“确认填写”。`);
+        ? t("已建立 {added} 条空白记录。请核对完整预览并填写已有信息；本步骤仍有 {count} 个档案问题，之后必须回到本机 Agent 集中回答。", {
+            added: preparationResult.added_count,
+            count: questionCount,
+          })
+        : t("已建立 {added} 条空白记录。请核对更新后的完整预览，再选择“确认填写”。", {
+            added: preparationResult.added_count,
+          }));
       return;
     }
     await injectExecutor(currentTab.id, { frameIds: [currentFrameId] });
@@ -1076,33 +1109,54 @@ executeButton.addEventListener("click", async () => {
     undoButton.disabled = filledCount === 0;
     executionCompleted = true;
     if (result.event_type === "fill_failed") {
-      connection.textContent = "填写未完成";
+      setConnection("填写未完成");
       showMessage(
-        `没有字段通过页面回读验证；保留 ${preservedCount} 个已有字段，另有 ${unresolvedCount} 个字段未可靠写入。请重新识别当前步骤或手动处理。`,
+        t("没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。", {
+          preserved: preservedCount,
+          unresolved: unresolvedCount,
+        }),
         true,
       );
       return;
     }
     const profileQuestionCount =
       currentTask.plan.profile_questions?.length ?? 0;
-    connection.textContent = profileQuestionCount || unresolvedCount
-      ? `第 ${currentTask.plan.step_index ?? 1} 步待补档案`
-      : `第 ${currentTask.plan.step_index ?? 1} 步已填写`;
+    setConnection(
+      profileQuestionCount || unresolvedCount
+        ? "第 {step} 步待补档案"
+        : "第 {step} 步已填写",
+      { step: currentTask.plan.step_index ?? 1 },
+    );
+    const preservedSummary = preservedCount
+      ? t("；保留 {count} 个已有字段", { count: preservedCount })
+      : "";
+    const unresolvedSummary = unresolvedCount
+      ? t("；{count} 个字段未可靠写入", { count: unresolvedCount })
+      : "";
     const fillSummary = filledCount
-      ? `已填写 ${filledCount} 个空字段${
-          preservedCount ? `；保留 ${preservedCount} 个已有字段` : ""
-        }${unresolvedCount ? `；${unresolvedCount} 个字段未可靠写入` : ""}。`
-      : `当前步骤没有新的空字段需要填写${
-          preservedCount ? `；保留 ${preservedCount} 个已有字段` : ""
-        }。`;
+      ? t("已填写 {count} 个空字段{preserved}{unresolved}。", {
+          count: filledCount,
+          preserved: preservedSummary,
+          unresolved: unresolvedSummary,
+        })
+      : t("当前步骤没有新的空字段需要填写{preserved}。", {
+          preserved: preservedSummary,
+        });
     showMessage(profileQuestionCount
-      ? `${fillSummary}本步骤尚未完成：还有 ${profileQuestionCount} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。`
+      ? t("{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。", {
+          summary: fillSummary,
+          count: profileQuestionCount,
+        })
       : unresolvedCount
-        ? `${fillSummary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。`
-        : `${fillSummary}证据已同步到 Web，核对后请手动进入下一步。`,
+        ? t("{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。", {
+            summary: fillSummary,
+          })
+        : t("{summary}证据已同步到 Web，核对后请手动进入下一步。", {
+            summary: fillSummary,
+          }),
     unresolvedCount > 0);
   } catch (error) {
-    connection.textContent = "填写未完成";
+    setConnection("填写未完成");
     showMessage(error instanceof Error ? error.message : "填写失败。", true);
   } finally {
     if (
@@ -1137,14 +1191,18 @@ undoButton.addEventListener("click", async () => {
     const result = execution.result;
     if (!result?.ok) throw new Error(result?.message ?? "撤销失败。");
     await sendEvidence(currentTask.fill_task_id, result);
-    connection.textContent = "已撤销当前步骤的填写";
+    setConnection("已撤销当前步骤的填写");
     resetReviewApproval();
     showMessage(
-      `已恢复 ${result.field_results.length} 个字段${
+      t("已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。", {
+        count: result.field_results.length,
+        removed:
         result.removed_repeat_group_count
-          ? `；移除 ${result.removed_repeat_group_count} 条本次新增记录`
-          : ""
-      }。如需再次填写，请重新识别当前步骤。`,
+          ? t("；移除 {count} 条本次新增记录", {
+              count: result.removed_repeat_group_count,
+            })
+          : "",
+      }),
     );
   } catch (error) {
     showMessage(error instanceof Error ? error.message : "撤销失败。", true);

@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "AgentMesh-OfficialRecruitment" },
+  "extensionDescription": { "message": "Connect your Agent, Chrome, and Web workspace to inspect and assist with the career-site page you opened" },
+  "extensionActionTitle": { "message": "Career-site form assistant" }
+}

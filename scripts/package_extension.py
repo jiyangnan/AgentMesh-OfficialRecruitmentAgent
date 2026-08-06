@@ -29,6 +29,20 @@ def package_extension(
     metadata = json.loads(manifest.read_text(encoding="utf-8"))
     if metadata.get("manifest_version") != 3:
         raise ValueError("extension must use Manifest V3")
+    if metadata.get("default_locale") != "zh_CN":
+        raise ValueError("extension must declare the canonical default locale")
+    required_locales = ("zh_CN", "en", "ja", "ko")
+    for locale in required_locales:
+        messages = source / "_locales" / locale / "messages.json"
+        if not messages.is_file():
+            raise ValueError(f"extension locale is missing: {locale}")
+        catalog = json.loads(messages.read_text(encoding="utf-8"))
+        if not {
+            "extensionName",
+            "extensionDescription",
+            "extensionActionTitle",
+        }.issubset(catalog):
+            raise ValueError(f"extension locale is incomplete: {locale}")
 
     files = sorted(
         path

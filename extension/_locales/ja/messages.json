@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "AgentMesh-OfficialRecruitment" },
+  "extensionDescription": { "message": "Agent、Chrome、Webワークスペースを接続し、開いている採用サイトの入力を支援します" },
+  "extensionActionTitle": { "message": "採用サイト入力アシスタント" }
+}

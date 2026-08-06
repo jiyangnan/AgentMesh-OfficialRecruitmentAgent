@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "AgentMesh-OfficialRecruitment" },
+  "extensionDescription": { "message": "Agent, Chrome, Web 워크스페이스를 연결해 현재 채용 사이트의 입력을 지원합니다" },
+  "extensionActionTitle": { "message": "채용 사이트 입력 도우미" }
+}

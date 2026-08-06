@@ -1,0 +1,481 @@
+const STORAGE_KEY = "am_locale";
+
+export const SUPPORTED_LOCALES = ["zh-CN", "en", "ja", "ko"];
+
+const MESSAGES = {
+  "zh-CN": {},
+  en: {
+    "语言": "Language",
+    "官网申请填写器": "Career-site form assistant",
+    "尚未连接 AgentMesh360": "Not connected to AgentMesh360",
+    "断开": "Disconnect",
+    "连接本机 Agent": "Connect local Agent",
+    "本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。": "Your local Agent connects the account automatically. The extension never reads or stores your general API Key.",
+    "识别当前步骤": "Inspect current step",
+    "当前步骤": "Current step",
+    "附件、验证码、声明、下一步和最终提交保持手动。": "Attachments, CAPTCHA, declarations, Next, and final submission stay manual.",
+    "我已核对以上预览": "I reviewed this preview",
+    "撤销本次填写": "Undo this fill",
+    "确认填写": "Confirm fill",
+    "工作台入口": "Workspace link",
+    "前往工作台": "Open workspace",
+    "已连接本机开发工作台": "Connected to local development workspace",
+    "已连接本机 Agent": "Connected to local Agent",
+    "已自动连接本机开发工作台，可直接识别当前步骤。": "Connected to the local development workspace automatically. You can inspect the current step.",
+    "浏览器扩展尚未连接本机 Agent。": "The extension is not connected to the local Agent.",
+    "本机工作台身份校验失败。请确认开发服务正在 8010 或 8000 端口运行。": "Local workspace verification failed. Make sure the development service is running on port 8010 or 8000.",
+    "扩展缺少本机配对资料，请让 Agent 重新准备扩展。": "Local pairing data is missing. Ask your Agent to prepare the extension again.",
+    "扩展缺少本机配对资料，请让 Agent 运行 extension repair。": "Local pairing data is missing. Ask your Agent to run extension repair.",
+    "本机 Agent 暂时无法完成扩展连接。": "The local Agent cannot connect the extension right now.",
+    "本机 Agent 返回的扩展连接无效。": "The local Agent returned an invalid extension connection.",
+    "本机 Agent 返回了其他扩展的连接。": "The local Agent returned a connection for another extension.",
+    "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。": "The local Agent connection component is not ready. Send the setup command from the product site to your Agent first.",
+    "本机 Agent 暂时无法完成浏览器连接。": "The local Agent cannot complete the browser connection right now.",
+    "没有找到当前网页标签页。": "The current browser tab was not found.",
+    "请在真实招聘官网页面中使用辅助填写。": "Use the assistant on an actual career-site page.",
+    "旧连接需要重新配对。": "The previous connection must be paired again.",
+    "本机连接状态无效。": "The local connection is invalid.",
+    "已连接本机 Agent。现在可识别当前招聘页面。": "Connected to the local Agent. You can now inspect the current career page.",
+    "连接失败。": "Connection failed.",
+    "本机扩展连接已清除。": "The local extension connection was cleared.",
+    "请先连接本机 Agent。": "Connect the local Agent first.",
+    "浏览器扩展需要重新连接本机 Agent。": "Reconnect the extension to the local Agent.",
+    "创建当前页面辅助会话失败。": "Could not create an assistance session for this page.",
+    "本机 Agent 没有返回已确认资料。": "The local Agent did not return confirmed profile data.",
+    "本机 Agent 尚未启动，暂时无法读取已确认资料。": "The local Agent is not running, so confirmed profile data cannot be read yet.",
+    "请重新识别当前步骤后再撤销填写。": "Inspect the current step again before undoing the fill.",
+    "当前步骤没有改写已有内容。请核对页面，或手动进入网站下一步。": "No existing value was changed. Review the page or continue to the next step manually.",
+    "当前步骤已经填写。核对后可撤销，或手动进入网站下一步。": "The current step has been filled. Review it, then undo or continue manually.",
+    "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。": "No field in this step can be filled safely. Complete it manually, continue, then reopen the extension.",
+    "当前步骤已撤销": "Current step undone",
+    "等待识别当前步骤": "Waiting to inspect current step",
+    "个人档案已有更新。选择“识别当前步骤”即可在当前页面补填空字段。": "Your profile was updated. Select “Inspect current step” to fill empty fields on this page.",
+    "生成当前步骤的填写计划失败。": "Could not create a fill plan for this step.",
+    "正在识别当前步骤": "Inspecting current step",
+    "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。": "The current step has been filled. Review it, click the website's Next button manually, then reopen the extension.",
+    "识别失败": "Inspection failed",
+    "识别失败。": "Inspection failed.",
+    "读取辅助填写会话失败。": "Could not read the assistance session.",
+    "当前框架没有可观察的报名表。": "No application form was found in this frame.",
+    "当前页面及其同源内嵌区域中没有可识别的报名步骤。请先打开报名弹窗或点击任意待填写字段。": "No application step was found on this page or its same-origin frames. Open the application dialog or click a field first.",
+    "当前页面存在多个同等优先级的报名步骤，请先点击目标步骤中的任意字段。": "Several equally likely application steps were found. Click a field in the target step first.",
+    "本次可自动填写字段数 / 当前页面识别字段总数": "Fields available to fill / fields recognized on this page",
+    "建立缺少的记录": "Create missing records",
+    "先建立空白记录，随后重新生成完整预览": "Create blank records first, then regenerate the full preview",
+    "待人工处理字段": "Field requiring manual review",
+    "将从已确认档案填写": "Will use confirmed profile data",
+    "标准简历未提供该信息": "Not provided in the standard resume",
+    "待补充": "Missing",
+    "此字段保留手动处理": "This field stays manual",
+    "手动": "Manual",
+    "尚未建立可靠字段映射": "No reliable field mapping yet",
+    "未识别": "Unrecognized",
+    "需要核对后再处理": "Review before handling",
+    "待核对": "Review",
+    "需要人工处理": "Manual handling required",
+    "待处理": "Pending",
+    "当前步骤没有可识别字段": "No recognizable fields in this step",
+    "请先核对当前预览并勾选确认，再执行页面填写。": "Review the preview and check the confirmation box before filling the page.",
+    "个人档案已有更新": "Profile updated",
+    "本次没有填写。请重新选择“识别当前步骤”，核对新计划后再补填空字段。": "Nothing was filled. Select “Inspect current step” again and review the new plan before filling empty fields.",
+    "填写计划已有变化": "Fill plan changed",
+    "本次没有填写。请重新核对当前步骤的最新计划。": "Nothing was filled. Review the latest plan for this step.",
+    "正在建立缺少的记录": "Creating missing records",
+    "建立重复记录失败。": "Could not create repeated records.",
+    "新增记录后报名步骤所在框架发生变化，请重新识别。": "The application frame changed after records were added. Inspect the step again.",
+    "页面填写失败。": "Page fill failed.",
+    "填写未完成": "Fill incomplete",
+    "填写失败。": "Fill failed.",
+    "撤销失败。": "Undo failed.",
+    "已撤销当前步骤的填写": "Current-step fill undone",
+    "证据回传失败。": "Could not sync fill evidence.",
+    "工作台暂时无法打开，请稍后重试。": "The workspace cannot be opened right now. Try again later.",
+    "当前页面来源与填写任务不一致。": "This page does not match the fill task.",
+    "报名步骤结构已经变化，请重新审阅。": "The application-step structure changed. Review it again.",
+    "当前官网尚未验证可安全自动新增重复记录，请手动建立空白记录后重新识别。": "This site has not been verified for safe record creation. Create blank records manually, then inspect again.",
+    "当前页面没有可观察的报名步骤。": "No observable application step was found.",
+    "页面包含多个报名步骤，请先点击目标步骤中的任意字段。": "Several application steps were found. Click a field in the target step first.",
+    "当前步骤已经填写，请先撤销本次填写后再重试。": "This step is already filled. Undo this fill before trying again.",
+    "目标字段不属于当前报名步骤。": "The target field does not belong to the current application step.",
+    "没有可撤销的本地填写记录。": "There is no local fill record to undo.",
+    "第 {step} 步待补档案": "Step {step}: profile details needed",
+    "第 {step} 步已填写": "Step {step}: filled",
+    "第 {step} 步待确认": "Step {step}: review required",
+    "第 {step} 步需手动处理": "Step {step}: manual action required",
+    "第 {step} 步": "Step {step}",
+    "已有信息已经填写，但本步骤仍有 {count} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。": "Available values were filled, but {count} profile questions remain. Answer them with your local Agent. Do not continue until the updated profile is confirmed and this step is inspected again.",
+    "本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。": "This step is incomplete: {count} profile gaps were found. Answer them with your local Agent, confirm the updated profile, then inspect this step again.",
+    "档案还有 {count} 条结构化记录未出现在页面。先建立空白记录，系统会重新生成完整预览，再由你确认填写。": "{count} structured profile records are missing from the page. Create blank records first; the extension will regenerate a full preview for your review.",
+    "{error} 当前仍有 {count} 个档案问题未解决。": "{error} {count} profile questions are still unresolved.",
+    "可先填写已有信息；本步骤另有 {count} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。": "You can fill the available values, but {count} profile questions remain. Complete them in the workspace and hand them to your local Agent. Do not continue until they are confirmed.",
+    "可填 {fillable} / {total}{pending}": "Fillable {fillable} / {total}{pending}",
+    " · 待新增 {count} 条": " · {count} records to create",
+    "已建立 {added} 条空白记录。请核对完整预览并填写已有信息；本步骤仍有 {count} 个档案问题，之后必须回到本机 Agent 集中回答。": "Created {added} blank records. Review the full preview and fill available values; {count} profile questions still require answers through your local Agent.",
+    "已建立 {added} 条空白记录。请核对更新后的完整预览，再选择“确认填写”。": "Created {added} blank records. Review the updated full preview, then select “Confirm fill”.",
+    "没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。": "No field passed page verification. {preserved} existing values were preserved and {unresolved} fields could not be written reliably. Inspect this step again or handle them manually.",
+    "；保留 {count} 个已有字段": "; preserved {count} existing values",
+    "；{count} 个字段未可靠写入": "; {count} fields were not written reliably",
+    "已填写 {count} 个空字段{preserved}{unresolved}。": "Filled {count} empty fields{preserved}{unresolved}.",
+    "当前步骤没有新的空字段需要填写{preserved}。": "No new empty field needs filling{preserved}.",
+    "{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。": "{summary} This step is incomplete: {count} profile questions remain. Answer them with your local Agent; do not continue before confirming the new profile and inspecting again.",
+    "{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。": "{summary} Review and handle each unwritten field manually. Do not continue until complete.",
+    "{summary}证据已同步到 Web，核对后请手动进入下一步。": "{summary} Evidence was synced to Web. Review the page, then continue manually.",
+    "已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。": "Restored {count} fields{removed}. Inspect the current step again before filling.",
+    "；移除 {count} 条本次新增记录": "; removed {count} records created this time",
+    "填写任务当前状态为 {status}，不能执行。": "The fill task is {status} and cannot run.",
+    "辅助填写会话当前状态为 {status}，不能继续。": "The assistance session is {status} and cannot continue.",
+    "字段定位结果不是唯一值：{field}": "The field locator is not unique: {field}",
+    "字段结构已经变化：{field}": "The field structure changed: {field}"
+  },
+  ja: {
+    "语言": "言語",
+    "官网申请填写器": "採用サイト入力アシスタント",
+    "尚未连接 AgentMesh360": "AgentMesh360 未接続",
+    "断开": "切断",
+    "连接本机 Agent": "ローカル Agent に接続",
+    "本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。": "ローカル Agent がアカウント接続を行います。拡張機能は共通 API Key を読み取り・保存しません。",
+    "识别当前步骤": "現在のステップを確認",
+    "当前步骤": "現在のステップ",
+    "附件、验证码、声明、下一步和最终提交保持手动。": "添付、CAPTCHA、宣言、次へ、最終送信は手動で行います。",
+    "我已核对以上预览": "上のプレビューを確認しました",
+    "撤销本次填写": "今回の入力を元に戻す",
+    "确认填写": "入力を確定",
+    "工作台入口": "ワークスペース入口",
+    "前往工作台": "ワークスペースを開く",
+    "已连接本机开发工作台": "ローカル開発ワークスペースに接続済み",
+    "已连接本机 Agent": "ローカル Agent に接続済み",
+    "已自动连接本机开发工作台，可直接识别当前步骤。": "ローカル開発ワークスペースに自動接続しました。現在のステップを確認できます。",
+    "浏览器扩展尚未连接本机 Agent。": "拡張機能はローカル Agent に接続されていません。",
+    "本机工作台身份校验失败。请确认开发服务正在 8010 或 8000 端口运行。": "ローカルワークスペースの確認に失敗しました。開発サービスが 8010 または 8000 ポートで動作しているか確認してください。",
+    "扩展缺少本机配对资料，请让 Agent 重新准备扩展。": "ローカルのペアリング情報がありません。Agent に拡張機能を再準備させてください。",
+    "扩展缺少本机配对资料，请让 Agent 运行 extension repair。": "ローカルのペアリング情報がありません。Agent に extension repair を実行させてください。",
+    "本机 Agent 暂时无法完成扩展连接。": "ローカル Agent は現在拡張機能に接続できません。",
+    "本机 Agent 返回的扩展连接无效。": "ローカル Agent が無効な接続を返しました。",
+    "本机 Agent 返回了其他扩展的连接。": "ローカル Agent が別の拡張機能の接続を返しました。",
+    "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。": "ローカル Agent の接続機能が準備できていません。製品サイトのセットアップコマンドを先に Agent へ送ってください。",
+    "本机 Agent 暂时无法完成浏览器连接。": "ローカル Agent は現在ブラウザ接続を完了できません。",
+    "没有找到当前网页标签页。": "現在のタブが見つかりません。",
+    "请在真实招聘官网页面中使用辅助填写。": "実際の採用サイトで入力支援を使用してください。",
+    "旧连接需要重新配对。": "以前の接続を再ペアリングしてください。",
+    "本机连接状态无效。": "ローカル接続が無効です。",
+    "已连接本机 Agent。现在可识别当前招聘页面。": "ローカル Agent に接続しました。現在の採用ページを確認できます。",
+    "连接失败。": "接続に失敗しました。",
+    "本机扩展连接已清除。": "ローカル拡張機能の接続を消去しました。",
+    "请先连接本机 Agent。": "先にローカル Agent に接続してください。",
+    "浏览器扩展需要重新连接本机 Agent。": "拡張機能をローカル Agent に再接続してください。",
+    "创建当前页面辅助会话失败。": "このページの支援セッションを作成できませんでした。",
+    "本机 Agent 没有返回已确认资料。": "ローカル Agent から確認済みプロフィールが返りませんでした。",
+    "本机 Agent 尚未启动，暂时无法读取已确认资料。": "ローカル Agent が起動していないため、確認済みプロフィールを取得できません。",
+    "请重新识别当前步骤后再撤销填写。": "現在のステップを再確認してから入力を元に戻してください。",
+    "当前步骤没有改写已有内容。请核对页面，或手动进入网站下一步。": "既存の値は変更されていません。ページを確認するか、手動で次へ進んでください。",
+    "当前步骤已经填写。核对后可撤销，或手动进入网站下一步。": "現在のステップは入力済みです。確認後、元に戻すか手動で次へ進んでください。",
+    "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。": "安全に自動入力できる項目がありません。手動で完了して次へ進み、拡張機能を開き直してください。",
+    "当前步骤已撤销": "現在のステップを元に戻しました",
+    "等待识别当前步骤": "現在のステップの確認待ち",
+    "个人档案已有更新。选择“识别当前步骤”即可在当前页面补填空字段。": "プロフィールが更新されました。「現在のステップを確認」で空欄を補完できます。",
+    "生成当前步骤的填写计划失败。": "現在のステップの入力計画を作成できませんでした。",
+    "正在识别当前步骤": "現在のステップを確認中",
+    "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。": "現在のステップは入力済みです。確認後、サイトの「次へ」を手動で押し、拡張機能を開き直してください。",
+    "识别失败": "確認失敗",
+    "识别失败。": "確認に失敗しました。",
+    "读取辅助填写会话失败。": "入力支援セッションを取得できませんでした。",
+    "当前框架没有可观察的报名表。": "このフレームに確認可能な応募フォームがありません。",
+    "当前页面及其同源内嵌区域中没有可识别的报名步骤。请先打开报名弹窗或点击任意待填写字段。": "このページと同一オリジンのフレームに応募ステップが見つかりません。応募画面を開くか入力欄をクリックしてください。",
+    "当前页面存在多个同等优先级的报名步骤，请先点击目标步骤中的任意字段。": "候補となる応募ステップが複数あります。対象ステップの入力欄をクリックしてください。",
+    "本次可自动填写字段数 / 当前页面识别字段总数": "自動入力可能項目 / このページで認識した項目",
+    "建立缺少的记录": "不足レコードを作成",
+    "先建立空白记录，随后重新生成完整预览": "空のレコードを作成後、完全なプレビューを再生成します",
+    "待人工处理字段": "手動確認が必要な項目",
+    "将从已确认档案填写": "確認済みプロフィールから入力",
+    "标准简历未提供该信息": "標準履歴書に情報がありません",
+    "待补充": "要補足",
+    "此字段保留手动处理": "この項目は手動入力です",
+    "手动": "手動",
+    "尚未建立可靠字段映射": "信頼できる項目対応がありません",
+    "未识别": "未認識",
+    "需要核对后再处理": "確認後に処理",
+    "待核对": "要確認",
+    "需要人工处理": "手動対応が必要",
+    "待处理": "未処理",
+    "当前步骤没有可识别字段": "認識できる項目がありません",
+    "请先核对当前预览并勾选确认，再执行页面填写。": "プレビューを確認し、チェックを入れてから入力してください。",
+    "个人档案已有更新": "プロフィール更新済み",
+    "本次没有填写。请重新选择“识别当前步骤”，核对新计划后再补填空字段。": "今回は入力していません。もう一度「現在のステップを確認」を選び、新しい計画を確認してください。",
+    "填写计划已有变化": "入力計画が変更されました",
+    "本次没有填写。请重新核对当前步骤的最新计划。": "今回は入力していません。最新の入力計画を確認してください。",
+    "正在建立缺少的记录": "不足レコードを作成中",
+    "建立重复记录失败。": "繰り返しレコードを作成できませんでした。",
+    "新增记录后报名步骤所在框架发生变化，请重新识别。": "レコード作成後に応募フレームが変わりました。再確認してください。",
+    "页面填写失败。": "ページ入力に失敗しました。",
+    "填写未完成": "入力未完了",
+    "填写失败。": "入力に失敗しました。",
+    "撤销失败。": "元に戻せませんでした。",
+    "已撤销当前步骤的填写": "現在のステップの入力を元に戻しました",
+    "证据回传失败。": "入力記録を同期できませんでした。",
+    "工作台暂时无法打开，请稍后重试。": "ワークスペースを開けません。後でもう一度お試しください。",
+    "当前页面来源与填写任务不一致。": "このページは入力タスクと一致しません。",
+    "报名步骤结构已经变化，请重新审阅。": "応募ステップの構造が変わりました。再確認してください。",
+    "当前官网尚未验证可安全自动新增重复记录，请手动建立空白记录后重新识别。": "このサイトでの安全なレコード作成は未確認です。空のレコードを手動作成して再確認してください。",
+    "当前页面没有可观察的报名步骤。": "確認可能な応募ステップがありません。",
+    "页面包含多个报名步骤，请先点击目标步骤中的任意字段。": "応募ステップが複数あります。対象ステップの入力欄をクリックしてください。",
+    "当前步骤已经填写，请先撤销本次填写后再重试。": "このステップは入力済みです。元に戻してから再試行してください。",
+    "目标字段不属于当前报名步骤。": "対象項目は現在の応募ステップに属していません。",
+    "没有可撤销的本地填写记录。": "元に戻せるローカル入力記録がありません。",
+    "第 {step} 步待补档案": "ステップ {step}：プロフィール補足待ち",
+    "第 {step} 步已填写": "ステップ {step}：入力済み",
+    "第 {step} 步待确认": "ステップ {step}：確認待ち",
+    "第 {step} 步需手动处理": "ステップ {step}：手動対応が必要",
+    "第 {step} 步": "ステップ {step}",
+    "已有信息已经填写，但本步骤仍有 {count} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。": "入力可能な情報は入力しましたが、プロフィールの質問が {count} 件残っています。ローカル Agent で回答し、更新プロフィールを確認して再確認するまで次へ進まないでください。",
+    "本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。": "このステップは未完了です。プロフィール不足が {count} 件あります。ローカル Agent で回答し、更新プロフィールを確認してから再確認してください。",
+    "档案还有 {count} 条结构化记录未出现在页面。先建立空白记录，系统会重新生成完整预览，再由你确认填写。": "プロフィールの構造化レコード {count} 件がページにありません。空レコードを作成後、完全なプレビューを再生成します。",
+    "{error} 当前仍有 {count} 个档案问题未解决。": "{error} プロフィールの質問が {count} 件未解決です。",
+    "可先填写已有信息；本步骤另有 {count} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。": "既存情報は入力できますが、プロフィールの質問が {count} 件あります。ワークスペースで補足しローカル Agent に渡してください。確認前に次へ進まないでください。",
+    "可填 {fillable} / {total}{pending}": "入力可能 {fillable} / {total}{pending}",
+    " · 待新增 {count} 条": " · 作成待ち {count} 件",
+    "已建立 {added} 条空白记录。请核对完整预览并填写已有信息；本步骤仍有 {count} 个档案问题，之后必须回到本机 Agent 集中回答。": "空レコードを {added} 件作成しました。完全なプレビューを確認して入力してください。プロフィールの質問 {count} 件はローカル Agent で回答が必要です。",
+    "已建立 {added} 条空白记录。请核对更新后的完整预览，再选择“确认填写”。": "空レコードを {added} 件作成しました。更新されたプレビューを確認し、「入力を確定」を選んでください。",
+    "没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。": "ページ確認に成功した項目がありません。既存値 {preserved} 件を保持し、{unresolved} 件は確実に入力できませんでした。再確認するか手動で対応してください。",
+    "；保留 {count} 个已有字段": "、既存値 {count} 件を保持",
+    "；{count} 个字段未可靠写入": "、{count} 件を確実に入力できませんでした",
+    "已填写 {count} 个空字段{preserved}{unresolved}。": "空欄 {count} 件を入力しました{preserved}{unresolved}。",
+    "当前步骤没有新的空字段需要填写{preserved}。": "新たに入力する空欄はありません{preserved}。",
+    "{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。": "{summary} このステップは未完了です。プロフィールの質問が {count} 件あります。ローカル Agent で回答し、更新プロフィールを確認して再確認するまで次へ進まないでください。",
+    "{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。": "{summary} 未入力項目を確認して手動対応してください。完了前に次へ進まないでください。",
+    "{summary}证据已同步到 Web，核对后请手动进入下一步。": "{summary} 入力記録を Web に同期しました。確認後、手動で次へ進んでください。",
+    "已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。": "{count} 項目を復元しました{removed}。再入力する前に現在のステップを再確認してください。",
+    "；移除 {count} 条本次新增记录": "、今回作成した {count} 件を削除",
+    "填写任务当前状态为 {status}，不能执行。": "入力タスクの状態は {status} のため実行できません。",
+    "辅助填写会话当前状态为 {status}，不能继续。": "入力支援セッションの状態は {status} のため続行できません。",
+    "字段定位结果不是唯一值：{field}": "項目の位置が一意ではありません：{field}",
+    "字段结构已经变化：{field}": "項目構造が変わりました：{field}"
+  },
+  ko: {
+    "语言": "언어",
+    "官网申请填写器": "채용 사이트 입력 도우미",
+    "尚未连接 AgentMesh360": "AgentMesh360 연결 안 됨",
+    "断开": "연결 해제",
+    "连接本机 Agent": "로컬 Agent 연결",
+    "本机 Agent 会自动完成账户连接，扩展不会读取或保存通用 API Key。": "로컬 Agent가 계정을 자동 연결합니다. 확장 프로그램은 공용 API Key를 읽거나 저장하지 않습니다.",
+    "识别当前步骤": "현재 단계 확인",
+    "当前步骤": "현재 단계",
+    "附件、验证码、声明、下一步和最终提交保持手动。": "첨부 파일, CAPTCHA, 동의, 다음 단계, 최종 제출은 직접 진행합니다.",
+    "我已核对以上预览": "위 미리보기를 확인했습니다",
+    "撤销本次填写": "이번 입력 취소",
+    "确认填写": "입력 확인",
+    "工作台入口": "워크스페이스 링크",
+    "前往工作台": "워크스페이스 열기",
+    "已连接本机开发工作台": "로컬 개발 워크스페이스 연결됨",
+    "已连接本机 Agent": "로컬 Agent 연결됨",
+    "已自动连接本机开发工作台，可直接识别当前步骤。": "로컬 개발 워크스페이스에 자동 연결했습니다. 현재 단계를 확인할 수 있습니다.",
+    "浏览器扩展尚未连接本机 Agent。": "확장 프로그램이 로컬 Agent에 연결되지 않았습니다.",
+    "本机工作台身份校验失败。请确认开发服务正在 8010 或 8000 端口运行。": "로컬 워크스페이스 확인에 실패했습니다. 개발 서비스가 8010 또는 8000 포트에서 실행 중인지 확인하세요.",
+    "扩展缺少本机配对资料，请让 Agent 重新准备扩展。": "로컬 페어링 정보가 없습니다. Agent에게 확장 프로그램을 다시 준비하도록 요청하세요.",
+    "扩展缺少本机配对资料，请让 Agent 运行 extension repair。": "로컬 페어링 정보가 없습니다. Agent에게 extension repair를 실행하도록 요청하세요.",
+    "本机 Agent 暂时无法完成扩展连接。": "로컬 Agent가 현재 확장 프로그램 연결을 완료할 수 없습니다.",
+    "本机 Agent 返回的扩展连接无效。": "로컬 Agent가 잘못된 확장 프로그램 연결을 반환했습니다.",
+    "本机 Agent 返回了其他扩展的连接。": "로컬 Agent가 다른 확장 프로그램 연결을 반환했습니다.",
+    "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。": "로컬 Agent 연결 구성 요소가 준비되지 않았습니다. 제품 사이트의 설치 명령을 먼저 Agent에게 보내세요.",
+    "本机 Agent 暂时无法完成浏览器连接。": "로컬 Agent가 현재 브라우저 연결을 완료할 수 없습니다.",
+    "没有找到当前网页标签页。": "현재 브라우저 탭을 찾지 못했습니다.",
+    "请在真实招聘官网页面中使用辅助填写。": "실제 채용 사이트에서 입력 도우미를 사용하세요.",
+    "旧连接需要重新配对。": "이전 연결을 다시 페어링해야 합니다.",
+    "本机连接状态无效。": "로컬 연결 상태가 잘못되었습니다.",
+    "已连接本机 Agent。现在可识别当前招聘页面。": "로컬 Agent에 연결했습니다. 현재 채용 페이지를 확인할 수 있습니다.",
+    "连接失败。": "연결에 실패했습니다.",
+    "本机扩展连接已清除。": "로컬 확장 프로그램 연결을 지웠습니다.",
+    "请先连接本机 Agent。": "먼저 로컬 Agent에 연결하세요.",
+    "浏览器扩展需要重新连接本机 Agent。": "확장 프로그램을 로컬 Agent에 다시 연결하세요.",
+    "创建当前页面辅助会话失败。": "현재 페이지의 지원 세션을 만들지 못했습니다.",
+    "本机 Agent 没有返回已确认资料。": "로컬 Agent가 확인된 프로필을 반환하지 않았습니다.",
+    "本机 Agent 尚未启动，暂时无法读取已确认资料。": "로컬 Agent가 실행 중이 아니어서 확인된 프로필을 읽을 수 없습니다.",
+    "请重新识别当前步骤后再撤销填写。": "현재 단계를 다시 확인한 뒤 입력을 취소하세요.",
+    "当前步骤没有改写已有内容。请核对页面，或手动进入网站下一步。": "기존 값은 변경하지 않았습니다. 페이지를 확인하거나 다음 단계로 직접 이동하세요.",
+    "当前步骤已经填写。核对后可撤销，或手动进入网站下一步。": "현재 단계 입력을 마쳤습니다. 확인 후 취소하거나 다음 단계로 직접 이동하세요.",
+    "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。": "안전하게 자동 입력할 수 있는 필드가 없습니다. 직접 완료하고 다음 단계로 이동한 뒤 확장 프로그램을 다시 여세요.",
+    "当前步骤已撤销": "현재 단계 입력 취소됨",
+    "等待识别当前步骤": "현재 단계 확인 대기",
+    "个人档案已有更新。选择“识别当前步骤”即可在当前页面补填空字段。": "프로필이 업데이트되었습니다. ‘현재 단계 확인’을 선택해 빈 필드를 채우세요.",
+    "生成当前步骤的填写计划失败。": "현재 단계 입력 계획을 만들지 못했습니다.",
+    "正在识别当前步骤": "현재 단계 확인 중",
+    "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。": "현재 단계 입력을 마쳤습니다. 확인 후 사이트의 다음 버튼을 직접 누르고 확장 프로그램을 다시 여세요.",
+    "识别失败": "확인 실패",
+    "识别失败。": "확인에 실패했습니다.",
+    "读取辅助填写会话失败。": "입력 지원 세션을 읽지 못했습니다.",
+    "当前框架没有可观察的报名表。": "현재 프레임에 확인할 수 있는 지원서가 없습니다.",
+    "当前页面及其同源内嵌区域中没有可识别的报名步骤。请先打开报名弹窗或点击任意待填写字段。": "현재 페이지와 동일 출처 프레임에서 지원 단계를 찾지 못했습니다. 지원 창을 열거나 입력 필드를 클릭하세요.",
+    "当前页面存在多个同等优先级的报名步骤，请先点击目标步骤中的任意字段。": "우선순위가 같은 지원 단계가 여러 개입니다. 대상 단계의 필드를 먼저 클릭하세요.",
+    "本次可自动填写字段数 / 当前页面识别字段总数": "자동 입력 가능 필드 / 현재 페이지에서 확인한 필드",
+    "建立缺少的记录": "누락된 항목 만들기",
+    "先建立空白记录，随后重新生成完整预览": "빈 항목을 만든 뒤 전체 미리보기를 다시 생성합니다",
+    "待人工处理字段": "직접 확인할 필드",
+    "将从已确认档案填写": "확인된 프로필에서 입력",
+    "标准简历未提供该信息": "표준 이력서에 정보가 없음",
+    "待补充": "보완 필요",
+    "此字段保留手动处理": "이 필드는 직접 처리",
+    "手动": "직접 입력",
+    "尚未建立可靠字段映射": "신뢰할 수 있는 필드 매핑이 없음",
+    "未识别": "인식 안 됨",
+    "需要核对后再处理": "확인 후 처리",
+    "待核对": "확인 필요",
+    "需要人工处理": "직접 처리 필요",
+    "待处理": "대기",
+    "当前步骤没有可识别字段": "확인 가능한 필드가 없습니다",
+    "请先核对当前预览并勾选确认，再执行页面填写。": "미리보기를 확인하고 체크한 뒤 페이지를 입력하세요.",
+    "个人档案已有更新": "프로필 업데이트됨",
+    "本次没有填写。请重新选择“识别当前步骤”，核对新计划后再补填空字段。": "이번에는 입력하지 않았습니다. ‘현재 단계 확인’을 다시 선택하고 새 계획을 확인하세요.",
+    "填写计划已有变化": "입력 계획 변경됨",
+    "本次没有填写。请重新核对当前步骤的最新计划。": "이번에는 입력하지 않았습니다. 현재 단계의 최신 계획을 확인하세요.",
+    "正在建立缺少的记录": "누락된 항목 만드는 중",
+    "建立重复记录失败。": "반복 항목을 만들지 못했습니다.",
+    "新增记录后报名步骤所在框架发生变化，请重新识别。": "항목 추가 후 지원 프레임이 변경되었습니다. 다시 확인하세요.",
+    "页面填写失败。": "페이지 입력에 실패했습니다.",
+    "填写未完成": "입력 미완료",
+    "填写失败。": "입력에 실패했습니다.",
+    "撤销失败。": "입력 취소에 실패했습니다.",
+    "已撤销当前步骤的填写": "현재 단계 입력을 취소했습니다",
+    "证据回传失败。": "입력 증거를 동기화하지 못했습니다.",
+    "工作台暂时无法打开，请稍后重试。": "워크스페이스를 열 수 없습니다. 잠시 후 다시 시도하세요.",
+    "当前页面来源与填写任务不一致。": "현재 페이지가 입력 작업과 일치하지 않습니다.",
+    "报名步骤结构已经变化，请重新审阅。": "지원 단계 구조가 변경되었습니다. 다시 확인하세요.",
+    "当前官网尚未验证可安全自动新增重复记录，请手动建立空白记录后重新识别。": "이 사이트의 안전한 항목 추가는 아직 확인되지 않았습니다. 빈 항목을 직접 만든 뒤 다시 확인하세요.",
+    "当前页面没有可观察的报名步骤。": "확인 가능한 지원 단계가 없습니다.",
+    "页面包含多个报名步骤，请先点击目标步骤中的任意字段。": "지원 단계가 여러 개입니다. 대상 단계의 필드를 클릭하세요.",
+    "当前步骤已经填写，请先撤销本次填写后再重试。": "현재 단계는 이미 입력되었습니다. 이번 입력을 취소한 뒤 다시 시도하세요.",
+    "目标字段不属于当前报名步骤。": "대상 필드가 현재 지원 단계에 속하지 않습니다.",
+    "没有可撤销的本地填写记录。": "취소할 로컬 입력 기록이 없습니다.",
+    "第 {step} 步待补档案": "{step}단계: 프로필 보완 필요",
+    "第 {step} 步已填写": "{step}단계: 입력 완료",
+    "第 {step} 步待确认": "{step}단계: 확인 필요",
+    "第 {step} 步需手动处理": "{step}단계: 직접 처리 필요",
+    "第 {step} 步": "{step}단계",
+    "已有信息已经填写，但本步骤仍有 {count} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。": "사용 가능한 정보는 입력했지만 프로필 질문 {count}개가 남았습니다. 로컬 Agent에서 답하고 업데이트된 프로필을 확인한 뒤 이 단계를 다시 확인하기 전에는 다음으로 이동하지 마세요.",
+    "本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。": "이 단계는 완료되지 않았습니다. 프로필 누락 {count}개가 있습니다. 로컬 Agent에서 답하고 업데이트된 프로필을 확인한 뒤 다시 확인하세요.",
+    "档案还有 {count} 条结构化记录未出现在页面。先建立空白记录，系统会重新生成完整预览，再由你确认填写。": "프로필의 구조화 항목 {count}개가 페이지에 없습니다. 빈 항목을 만든 뒤 전체 미리보기를 다시 생성합니다.",
+    "{error} 当前仍有 {count} 个档案问题未解决。": "{error} 프로필 질문 {count}개가 아직 해결되지 않았습니다.",
+    "可先填写已有信息；本步骤另有 {count} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。": "기존 정보는 입력할 수 있지만 프로필 질문 {count}개가 남았습니다. 워크스페이스에서 보완해 로컬 Agent에 전달하고, 확인 전에는 다음으로 이동하지 마세요.",
+    "可填 {fillable} / {total}{pending}": "입력 가능 {fillable} / {total}{pending}",
+    " · 待新增 {count} 条": " · 추가 대기 {count}개",
+    "已建立 {added} 条空白记录。请核对完整预览并填写已有信息；本步骤仍有 {count} 个档案问题，之后必须回到本机 Agent 集中回答。": "빈 항목 {added}개를 만들었습니다. 전체 미리보기를 확인하고 기존 정보를 입력하세요. 프로필 질문 {count}개는 로컬 Agent에서 답해야 합니다.",
+    "已建立 {added} 条空白记录。请核对更新后的完整预览，再选择“确认填写”。": "빈 항목 {added}개를 만들었습니다. 업데이트된 전체 미리보기를 확인한 뒤 ‘입력 확인’을 선택하세요.",
+    "没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。": "페이지 확인을 통과한 필드가 없습니다. 기존 값 {preserved}개는 유지했고 {unresolved}개는 안정적으로 입력하지 못했습니다. 다시 확인하거나 직접 처리하세요.",
+    "；保留 {count} 个已有字段": "; 기존 값 {count}개 유지",
+    "；{count} 个字段未可靠写入": "; {count}개 필드 입력 불확실",
+    "已填写 {count} 个空字段{preserved}{unresolved}。": "빈 필드 {count}개를 입력했습니다{preserved}{unresolved}.",
+    "当前步骤没有新的空字段需要填写{preserved}。": "새로 입력할 빈 필드가 없습니다{preserved}.",
+    "{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。": "{summary} 이 단계는 완료되지 않았습니다. 프로필 질문 {count}개가 남았습니다. 로컬 Agent에서 답하고 새 프로필을 확인해 다시 확인하기 전에는 다음으로 이동하지 마세요.",
+    "{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。": "{summary} 입력되지 않은 필드를 확인해 직접 처리하세요. 완료 전에는 다음으로 이동하지 마세요.",
+    "{summary}证据已同步到 Web，核对后请手动进入下一步。": "{summary} 입력 증거가 Web에 동기화되었습니다. 확인 후 직접 다음으로 이동하세요.",
+    "已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。": "필드 {count}개를 복원했습니다{removed}. 다시 입력하려면 현재 단계를 다시 확인하세요.",
+    "；移除 {count} 条本次新增记录": "; 이번에 만든 항목 {count}개 제거",
+    "填写任务当前状态为 {status}，不能执行。": "입력 작업 상태가 {status}이므로 실행할 수 없습니다.",
+    "辅助填写会话当前状态为 {status}，不能继续。": "입력 지원 세션 상태가 {status}이므로 계속할 수 없습니다.",
+    "字段定位结果不是唯一值：{field}": "필드 위치가 고유하지 않습니다: {field}",
+    "字段结构已经变化：{field}": "필드 구조가 변경되었습니다: {field}"
+  }
+};
+
+let currentLocale = "zh-CN";
+
+export function locale() {
+  return currentLocale;
+}
+
+export function normalizeLocale(value) {
+  const raw = String(value ?? "").toLowerCase();
+  if (raw === "zh" || raw.startsWith("zh-")) return "zh-CN";
+  if (raw === "en" || raw.startsWith("en-")) return "en";
+  if (raw === "ja" || raw.startsWith("ja-")) return "ja";
+  if (raw === "ko" || raw.startsWith("ko-")) return "ko";
+  return "";
+}
+
+export function t(source, values = {}, locale = currentLocale) {
+  const template = MESSAGES[locale]?.[source] ?? source;
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    template,
+  );
+}
+
+export function hasTranslation(source, locale) {
+  return Object.prototype.hasOwnProperty.call(MESSAGES[locale] ?? {}, source);
+}
+
+const MESSAGE_PATTERNS = [
+  [/^第 (\d+) 步待补档案$/, "第 {step} 步待补档案", ["step"]],
+  [/^第 (\d+) 步已填写$/, "第 {step} 步已填写", ["step"]],
+  [/^第 (\d+) 步待确认$/, "第 {step} 步待确认", ["step"]],
+  [/^第 (\d+) 步需手动处理$/, "第 {step} 步需手动处理", ["step"]],
+  [/^第 (\d+) 步$/, "第 {step} 步", ["step"]],
+  [/^填写任务当前状态为 (.+)，不能执行。$/, "填写任务当前状态为 {status}，不能执行。", ["status"]],
+  [/^辅助填写会话当前状态为 (.+)，不能继续。$/, "辅助填写会话当前状态为 {status}，不能继续。", ["status"]],
+  [/^字段定位结果不是唯一值：(.+)$/, "字段定位结果不是唯一值：{field}", ["field"]],
+  [/^字段结构已经变化：(.+)$/, "字段结构已经变化：{field}", ["field"]],
+];
+
+export function localizeMessage(source) {
+  if (typeof source !== "string") return String(source ?? "");
+  const translated = t(source);
+  if (translated !== source || currentLocale === "zh-CN") return translated;
+  for (const [pattern, key, names] of MESSAGE_PATTERNS) {
+    const match = source.match(pattern);
+    if (!match) continue;
+    return t(
+      key,
+      Object.fromEntries(names.map((name, index) => [name, match[index + 1]])),
+    );
+  }
+  return source;
+}
+
+function applyDocumentTranslations() {
+  document.documentElement.lang = currentLocale;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
+    node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  });
+  document.querySelectorAll("[data-locale]").forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.locale === currentLocale),
+    );
+  });
+}
+
+export async function setLocalePreference(value) {
+  const next = normalizeLocale(value);
+  if (!next) return currentLocale;
+  currentLocale = next;
+  await chrome.storage.local.set({ [STORAGE_KEY]: currentLocale });
+  applyDocumentTranslations();
+  return currentLocale;
+}
+
+export async function initializeI18n() {
+  let stored = "";
+  try {
+    const value = await chrome.storage.local.get(STORAGE_KEY);
+    stored = normalizeLocale(value?.[STORAGE_KEY]);
+  } catch {
+    // The browser UI language remains a safe fallback.
+  }
+  const chromeLocale = normalizeLocale(chrome.i18n?.getUILanguage?.());
+  currentLocale =
+    stored ||
+    chromeLocale ||
+    (chrome.i18n ? normalizeLocale(navigator.language) : "") ||
+    "zh-CN";
+  applyDocumentTranslations();
+  document.querySelectorAll("[data-locale]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const locale = normalizeLocale(button.dataset.locale);
+      if (!locale || locale === currentLocale) return;
+      await setLocalePreference(locale);
+      window.location.reload();
+    });
+  });
+  return currentLocale;
+}
