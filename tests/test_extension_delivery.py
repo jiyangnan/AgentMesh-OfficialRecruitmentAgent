@@ -60,7 +60,7 @@ def _extension_archive(
                     "manifest_version": 3,
                     "name": "AgentMesh360 官网申请填写器",
                     "version": version,
-                    "default_locale": "zh_CN",
+                    "default_locale": "en",
                 },
                 ensure_ascii=False,
             ),

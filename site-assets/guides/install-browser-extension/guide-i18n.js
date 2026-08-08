@@ -9,7 +9,7 @@ export const GUIDE_MESSAGES = {
     "返回工作台": "Back to workspace",
     "AgentMesh360 · Chrome 扩展安装": "AgentMesh360 · Chrome extension setup",
     "根据你的网络条件，选择合适的官方安装方式。": "Choose the official installation method that works for your network.",
-    "官方 ZIP 0.6.7 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "The official ZIP 0.6.7 is available now for every user to download from the AgentMesh360 workspace. The Chrome Web Store version is still under review and will become the automatic-update option after approval.",
+    "官方 ZIP 0.6.8 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "The official ZIP 0.6.8 is available now for every user to download from the AgentMesh360 workspace. The Chrome Web Store version is still under review and will become the automatic-update option after approval.",
     "下载官方 ZIP": "Download official ZIP",
     "查看商店安装": "View store installation",
     "共同前置条件": "Before either method",
@@ -18,7 +18,7 @@ export const GUIDE_MESSAGES = {
     "命令；Windows PowerShell 使用": ". In Windows PowerShell, use",
     "本机连接组件会随 CLI 一起注册。": "The local connection component is registered with the CLI.",
     "无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。": "With either the store or ZIP version, select “Connect local Agent.” You do not need to find, copy, or paste an API Key again.",
-    "方式一：立即下载官方 ZIP 0.6.7": "Method 1: Download the official ZIP 0.6.7 now",
+    "方式一：立即下载官方 ZIP 0.6.8": "Method 1: Download the official ZIP 0.6.8 now",
     "当前已经可用，适合所有用户；macOS、Windows 和 Linux 使用同一份扩展 ZIP。": "Available now for every user. The same extension ZIP works on macOS, Windows, and Linux.",
     "方式二：Chrome Web Store（审核中）": "Method 2: Chrome Web Store (under review)",
     "适合能够访问 Chrome Web Store 并希望由 Chrome 自动更新的用户。商店版本审核通过后，工作台会开放正式入口。": "For users who can access Chrome Web Store and prefer automatic updates from Chrome. The workspace will expose the official listing after approval.",
@@ -57,7 +57,7 @@ export const GUIDE_MESSAGES = {
     "ZIP 安装用户先退出正在进行的辅助填写，让 Agent 运行": "For ZIP installations, finish any active fill session, then ask the Agent to run",
     "Agent 校验新版本并更新同一个固定目录；随后打开": "The Agent verifies the release and updates the same permanent folder. Then open",
     "，在扩展卡片上点击“重新加载”。": "and select “Reload” on the extension card.",
-    "重新打开扩展，确认版本为 0.6.7 或更高，且本机 Agent 连接仍可恢复。": "Reopen the extension and confirm that the version is 0.6.7 or later and that the local Agent connection is restored.",
+    "重新打开扩展，确认版本为 0.6.8 或更高，且本机 Agent 连接仍可恢复。": "Reopen the extension and confirm that the version is 0.6.8 or later and that the local Agent connection is restored.",
     "常见问题": "FAQ",
     "Chrome 提示找不到 manifest.json": "Chrome cannot find manifest.json",
     "通常是选择了 ZIP、选择了解压目录外面多一层的父目录，或者 ZIP 没有完整解压。请进入目录确认能够直接看到 manifest.json，再重新加载。": "You may have selected the ZIP, selected the parent folder, or not fully extracted the archive. Open the folder, confirm that manifest.json is directly visible, and load it again.",
@@ -91,7 +91,7 @@ export const GUIDE_MESSAGES = {
     "返回工作台": "ワークスペースに戻る",
     "AgentMesh360 · Chrome 扩展安装": "AgentMesh360 · Chrome 拡張のインストール",
     "根据你的网络条件，选择合适的官方安装方式。": "ネットワーク環境に合う公式インストール方法を選んでください。",
-    "官方 ZIP 0.6.7 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "公式 ZIP 0.6.7 は現在利用可能で、すべてのユーザーが AgentMesh360 ワークスペースから直接ダウンロードできます。Chrome ウェブストア版は審査中で、承認後は自動更新の選択肢になります。",
+    "官方 ZIP 0.6.8 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "公式 ZIP 0.6.8 は現在利用可能で、すべてのユーザーが AgentMesh360 ワークスペースから直接ダウンロードできます。Chrome ウェブストア版は審査中で、承認後は自動更新の選択肢になります。",
     "下载官方 ZIP": "公式 ZIP をダウンロード",
     "查看商店安装": "ストア版を見る",
     "共同前置条件": "共通の事前準備",
@@ -100,7 +100,7 @@ export const GUIDE_MESSAGES = {
     "命令；Windows PowerShell 使用": "コマンドを使います。Windows PowerShell では",
     "本机连接组件会随 CLI 一起注册。": "ローカル接続コンポーネントは CLI と一緒に登録されます。",
     "无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。": "ストア版でも ZIP 版でも「ローカル Agent に接続」を選ぶだけです。API Key を探したり、コピーして貼り付けたりする必要はありません。",
-    "方式一：立即下载官方 ZIP 0.6.7": "方法 1：公式 ZIP 0.6.7 を今すぐダウンロード",
+    "方式一：立即下载官方 ZIP 0.6.8": "方法 1：公式 ZIP 0.6.8 を今すぐダウンロード",
     "当前已经可用，适合所有用户；macOS、Windows 和 Linux 使用同一份扩展 ZIP。": "現在すべてのユーザーが利用できます。同じ拡張 ZIP を macOS、Windows、Linux で使用できます。",
     "方式二：Chrome Web Store（审核中）": "方法 2：Chrome ウェブストア（審査中）",
     "适合能够访问 Chrome Web Store 并希望由 Chrome 自动更新的用户。商店版本审核通过后，工作台会开放正式入口。": "Chrome ウェブストアを利用でき、Chrome の自動更新を希望するユーザー向けです。審査通過後にワークスペースで正式なページを公開します。",
@@ -139,7 +139,7 @@ export const GUIDE_MESSAGES = {
     "ZIP 安装用户先退出正在进行的辅助填写，让 Agent 运行": "ZIP 版では進行中の入力補助を終了してから、Agent に",
     "Agent 校验新版本并更新同一个固定目录；随后打开": "Agent が新版を検証し、同じ固定フォルダーを更新します。その後",
     "，在扩展卡片上点击“重新加载”。": "を開き、拡張機能カードの「再読み込み」を選びます。",
-    "重新打开扩展，确认版本为 0.6.7 或更高，且本机 Agent 连接仍可恢复。": "拡張機能を再び開き、バージョンが 0.6.7 以降で、ローカル Agent への接続が復元されることを確認します。",
+    "重新打开扩展，确认版本为 0.6.8 或更高，且本机 Agent 连接仍可恢复。": "拡張機能を再び開き、バージョンが 0.6.8 以降で、ローカル Agent への接続が復元されることを確認します。",
     "常见问题": "よくある質問",
     "Chrome 提示找不到 manifest.json": "Chrome が manifest.json を見つけられない",
     "通常是选择了 ZIP、选择了解压目录外面多一层的父目录，或者 ZIP 没有完整解压。请进入目录确认能够直接看到 manifest.json，再重新加载。": "ZIP 自体や一つ上の親フォルダーを選んだ、または完全に展開されていない可能性があります。フォルダー内に manifest.json が直接見えることを確認して再度読み込んでください。",
@@ -173,7 +173,7 @@ export const GUIDE_MESSAGES = {
     "返回工作台": "워크스페이스로 돌아가기",
     "AgentMesh360 · Chrome 扩展安装": "AgentMesh360 · Chrome 확장 프로그램 설치",
     "根据你的网络条件，选择合适的官方安装方式。": "네트워크 환경에 맞는 공식 설치 방법을 선택하세요.",
-    "官方 ZIP 0.6.7 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "공식 ZIP 0.6.7은 지금 사용할 수 있으며 모든 사용자가 AgentMesh360 워크스페이스에서 직접 다운로드할 수 있습니다. Chrome 웹 스토어 버전은 심사 중이며 승인 후 자동 업데이트 경로로 제공됩니다.",
+    "官方 ZIP 0.6.8 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。": "공식 ZIP 0.6.8은 지금 사용할 수 있으며 모든 사용자가 AgentMesh360 워크스페이스에서 직접 다운로드할 수 있습니다. Chrome 웹 스토어 버전은 심사 중이며 승인 후 자동 업데이트 경로로 제공됩니다.",
     "下载官方 ZIP": "공식 ZIP 다운로드",
     "查看商店安装": "스토어 설치 보기",
     "共同前置条件": "공통 준비 사항",
@@ -182,7 +182,7 @@ export const GUIDE_MESSAGES = {
     "命令；Windows PowerShell 使用": "명령을 사용합니다. Windows PowerShell에서는",
     "本机连接组件会随 CLI 一起注册。": "로컬 연결 구성 요소는 CLI와 함께 등록됩니다.",
     "无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。": "스토어 버전과 ZIP 버전 모두 “로컬 Agent 연결”만 선택하면 됩니다. API Key를 다시 찾거나 복사해 붙여 넣을 필요가 없습니다.",
-    "方式一：立即下载官方 ZIP 0.6.7": "방법 1: 공식 ZIP 0.6.7 지금 다운로드",
+    "方式一：立即下载官方 ZIP 0.6.8": "방법 1: 공식 ZIP 0.6.8 지금 다운로드",
     "当前已经可用，适合所有用户；macOS、Windows 和 Linux 使用同一份扩展 ZIP。": "현재 모든 사용자가 이용할 수 있습니다. macOS, Windows, Linux에서 같은 확장 프로그램 ZIP을 사용합니다.",
     "方式二：Chrome Web Store（审核中）": "방법 2: Chrome 웹 스토어(심사 중)",
     "适合能够访问 Chrome Web Store 并希望由 Chrome 自动更新的用户。商店版本审核通过后，工作台会开放正式入口。": "Chrome 웹 스토어를 이용할 수 있고 Chrome 자동 업데이트를 원하는 사용자를 위한 방법입니다. 승인 후 워크스페이스에 공식 페이지가 열립니다.",
@@ -221,7 +221,7 @@ export const GUIDE_MESSAGES = {
     "ZIP 安装用户先退出正在进行的辅助填写，让 Agent 运行": "ZIP 설치 사용자는 진행 중인 입력 지원을 끝낸 다음 Agent에서",
     "Agent 校验新版本并更新同一个固定目录；随后打开": "Agent가 새 버전을 검증하고 같은 고정 폴더를 업데이트합니다. 그런 다음",
     "，在扩展卡片上点击“重新加载”。": "을 열고 확장 프로그램 카드에서 “새로고침”을 선택합니다.",
-    "重新打开扩展，确认版本为 0.6.7 或更高，且本机 Agent 连接仍可恢复。": "확장 프로그램을 다시 열어 버전이 0.6.7 이상이고 로컬 Agent 연결이 복원되는지 확인합니다.",
+    "重新打开扩展，确认版本为 0.6.8 或更高，且本机 Agent 连接仍可恢复。": "확장 프로그램을 다시 열어 버전이 0.6.8 이상이고 로컬 Agent 연결이 복원되는지 확인합니다.",
     "常见问题": "자주 묻는 질문",
     "Chrome 提示找不到 manifest.json": "Chrome에서 manifest.json을 찾을 수 없음",
     "通常是选择了 ZIP、选择了解压目录外面多一层的父目录，或者 ZIP 没有完整解压。请进入目录确认能够直接看到 manifest.json，再重新加载。": "ZIP 자체나 상위 폴더를 선택했거나 압축이 완전히 풀리지 않았을 수 있습니다. 폴더에서 manifest.json이 바로 보이는지 확인한 뒤 다시 로드하세요.",
@@ -297,15 +297,15 @@ function localizeLinks(locale) {
     if (!base) continue;
     link.dataset.guideBaseHref = base;
     const url = new URL(base, window.location.origin);
-    if (locale === "zh-CN") url.searchParams.delete("lang");
+    if (locale === "en") url.searchParams.delete("lang");
     else url.searchParams.set("lang", locale);
     link.setAttribute("href", `${url.pathname}${url.search}${url.hash}`);
   }
   const parent = document.querySelector("[data-agentmesh-link]");
   if (parent) {
     parent.setAttribute("href", {
-      "zh-CN": "https://agentmesh360.com/",
-      en: "https://agentmesh360.com/en/",
+      "zh-CN": "https://agentmesh360.com/zh/",
+      en: "https://agentmesh360.com/",
       ja: "https://agentmesh360.com/ja/",
       ko: "https://agentmesh360.com/ko/"
     }[locale]);
@@ -313,7 +313,7 @@ function localizeLinks(locale) {
 }
 
 export function applyGuideLocale(locale, { updateUrl = false } = {}) {
-  const selected = SUPPORTED_LOCALES.includes(locale) ? locale : "zh-CN";
+  const selected = SUPPORTED_LOCALES.includes(locale) ? locale : "en";
   document.documentElement.lang = selected;
   for (const [node, source] of textSources) replaceText(node, translate(source, selected));
   for (const [element, source] of attributeSources) {
@@ -333,11 +333,11 @@ export function applyGuideLocale(locale, { updateUrl = false } = {}) {
   try {
     window.localStorage.setItem("am_locale", selected);
   } catch {
-    // URL and browser language remain available when storage is restricted.
+    // The URL remains available when preference storage is restricted.
   }
   if (updateUrl) {
     const url = new URL(window.location.href);
-    if (selected === "zh-CN") url.searchParams.delete("lang");
+    if (selected === "en") url.searchParams.delete("lang");
     else url.searchParams.set("lang", selected);
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
@@ -350,9 +350,9 @@ if (document.body) {
   try {
     stored = normalizeLocale(window.localStorage.getItem("am_locale"));
   } catch {
-    // Use the URL or browser language when storage is restricted.
+    // Use the URL or English default when storage is restricted.
   }
-  applyGuideLocale(requested || stored || normalizeLocale(navigator.language) || "zh-CN");
+  applyGuideLocale(requested || stored || "en");
   for (const button of document.querySelectorAll("[data-guide-locale]")) {
     button.addEventListener("click", () => {
       applyGuideLocale(button.dataset.guideLocale, { updateUrl: true });

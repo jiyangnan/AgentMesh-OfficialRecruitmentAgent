@@ -29,7 +29,7 @@ def package_extension(
     metadata = json.loads(manifest.read_text(encoding="utf-8"))
     if metadata.get("manifest_version") != 3:
         raise ValueError("extension must use Manifest V3")
-    if metadata.get("default_locale") != "zh_CN":
+    if metadata.get("default_locale") != "en":
         raise ValueError("extension must declare the canonical default locale")
     required_locales = ("zh_CN", "en", "ja", "ko")
     for locale in required_locales:
