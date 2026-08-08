@@ -40,8 +40,11 @@ def test_extension_package_is_installable_and_contains_no_secret(
         text=True,
     )
     summary = json.loads(completed.stdout)
+    source_manifest = json.loads(
+        (ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")
+    )
 
-    assert summary["version"] == "0.6.7"
+    assert summary["version"] == source_manifest["version"]
     assert summary["production"] is True
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
@@ -70,14 +73,14 @@ def test_extension_package_is_installable_and_contains_no_secret(
     ]
     assert manifest["key"]
     assert manifest["name"] == "__MSG_extensionName__"
-    assert manifest["default_locale"] == "zh_CN"
+    assert manifest["default_locale"] == "en"
     assert _extension_id(manifest["key"]) == OFFICIAL_CHROME_EXTENSION_ID
     assert manifest["host_permissions"] == [
         "http://127.0.0.1:8765/*",
         "https://agentmesh360.com/*",
         "https://*.agentmesh360.com/*",
     ]
-    assert "连接本机 Agent" in popup_html
+    assert "Connect local Agent" in popup_html
     assert 'id="api-key"' not in popup_html
     assert 'type="password"' not in popup_html
     assert "currentApiKey" not in popup_js

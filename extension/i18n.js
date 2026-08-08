@@ -375,7 +375,7 @@ const MESSAGES = {
   }
 };
 
-let currentLocale = "zh-CN";
+let currentLocale = "en";
 
 export function locale() {
   return currentLocale;
@@ -460,14 +460,9 @@ export async function initializeI18n() {
     const value = await chrome.storage.local.get(STORAGE_KEY);
     stored = normalizeLocale(value?.[STORAGE_KEY]);
   } catch {
-    // The browser UI language remains a safe fallback.
+    // A stored preference is optional; English is the product default.
   }
-  const chromeLocale = normalizeLocale(chrome.i18n?.getUILanguage?.());
-  currentLocale =
-    stored ||
-    chromeLocale ||
-    (chrome.i18n ? normalizeLocale(navigator.language) : "") ||
-    "zh-CN";
+  currentLocale = stored || "en";
   applyDocumentTranslations();
   document.querySelectorAll("[data-locale]").forEach((button) => {
     button.addEventListener("click", async () => {
