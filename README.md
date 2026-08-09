@@ -48,10 +48,11 @@ API Key 可在 [AgentMesh360 个人中心](https://agentmesh360.com/account/) �
 2. 无法访问商店的中国大陆用户，从工作台下载官方 ZIP，解压后在
    `chrome://extensions/` 开启开发者模式并选择“加载已解压的扩展程序”。
 
-商店尚未审核通过时，工作台会明确显示“审核中”，不会把未公开页面作为可用入口。ZIP
-下载、当前版本、SHA-256 和完整中文步骤见
+[Chrome Web Store 官方扩展](https://chromewebstore.google.com/detail/agentmesh-officialrecruit/fbgfhigphgmacnhgeomdjemfomhnjaai)
+已经公开可安装。ZIP 下载、当前版本、SHA-256 和完整中文步骤见
 [官方安装指南](https://recruit.agentmesh360.com/guides/install-browser-extension/)。两条
-渠道使用同一源码、版本和官方扩展 ID。
+渠道使用同一源码、官方扩展 ID 和连接协议；商店更新可能因 Google 审核短暂晚于官方
+ZIP，但不会形成权限或安全能力不同的地区版本。
 
 本机 Agent 也可以代为校验并准备 ZIP：
 

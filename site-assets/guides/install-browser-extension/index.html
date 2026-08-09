@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Install the AgentMesh-OfficialRecruitment browser extension</title>
   <meta name="description" content="Install the AgentMesh-OfficialRecruitment browser extension from the official ZIP or Chrome Web Store." />
-  <meta name="robots" content="noindex,nofollow" />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
   <link rel="canonical" href="https://recruit.agentmesh360.com/guides/install-browser-extension/" />
   <link rel="icon" type="image/svg+xml" href="/workbench-icon.svg" />
   <link rel="stylesheet" href="/seo.css" />
@@ -32,10 +32,10 @@
       <div class="container">
         <p class="eyebrow">AgentMesh360 · Chrome 扩展安装</p>
         <h1>根据你的网络条件，选择合适的官方安装方式。</h1>
-        <p class="lead">官方 ZIP 0.6.8 现已可用，所有用户都可以从 AgentMesh360 工作台直接下载；Chrome Web Store 版本仍在审核，审核通过后可作为自动更新渠道。</p>
+        <p class="lead">Chrome Web Store 官方版现已上架，可直接前往商店安装并由 Chrome 自动更新；无法访问商店的用户仍可从 AgentMesh360 工作台下载官方 ZIP 0.6.8。</p>
         <div class="hero-actions">
-          <a class="button primary" href="#direct-download">下载官方 ZIP</a>
-          <a class="button secondary" href="#store-install">查看商店安装</a>
+          <a class="button primary" href="https://chromewebstore.google.com/detail/agentmesh-officialrecruit/fbgfhigphgmacnhgeomdjemfomhnjaai" target="_blank" rel="noreferrer">前往 Chrome 商店安装</a>
+          <a class="button secondary" href="#direct-download">下载官方 ZIP</a>
         </div>
       </div>
     </section>
@@ -47,8 +47,16 @@
           <li><strong>本机连接组件会随 CLI 一起注册。</strong>无论使用商店还是 ZIP，扩展都只需点击“连接本机 Agent”，不会要求再次寻找、复制或粘贴 API Key。</li>
         </ol>
       </section>
+      <section id="store-install">
+        <h2>方式一：Chrome Web Store 官方安装</h2>
+        <p>适合能够访问 Chrome Web Store 的用户；安装后由 Chrome 自动更新，无需开启开发者模式或手动维护扩展目录。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://chromewebstore.google.com/detail/agentmesh-officialrecruit/fbgfhigphgmacnhgeomdjemfomhnjaai" target="_blank" rel="noreferrer">前往 Chrome 商店安装</a>
+        </div>
+        <div class="callout"><strong>当前状态：已上架。</strong>点击上方按钮进入 AgentMesh-OfficialRecruitment 官方商店页面，再按照 Chrome 提示确认安装。</div>
+      </section>
       <section id="direct-download">
-        <h2>方式一：立即下载官方 ZIP 0.6.8</h2>
+        <h2>方式二：下载官方 ZIP 0.6.8</h2>
         <p>当前已经可用，适合所有用户；macOS、Windows 和 Linux 使用同一份扩展 ZIP。</p>
         <div class="hero-actions">
           <a class="button primary" href="/downloads/agentmesh-officialrecruitment-extension.zip" download>下载官方扩展 ZIP</a>
@@ -65,11 +73,6 @@
           <li><strong>打开真实报名页面。</strong>你不需要先回 Web 创建任务。自行打开并登录目标招聘官网，进入当前可见的报名步骤，再点击扩展中的“识别当前步骤”。</li>
         </ol>
         <div class="callout"><strong>需要自动修复时交给 Agent。</strong>也可以让本机 Agent 运行 <code>ora-workbench extension prepare</code>，它会校验官方版本并准备固定目录；误删或损坏后运行 <code>ora-workbench extension repair</code>。</div>
-      </section>
-      <section id="store-install">
-        <h2>方式二：Chrome Web Store（审核中）</h2>
-        <p>适合能够访问 Chrome Web Store 并希望由 Chrome 自动更新的用户。商店版本审核通过后，工作台会开放正式入口。</p>
-        <div class="callout"><strong>当前状态：商店审核中。</strong>审核完成前请使用上方已经发布的官方 ZIP。工作台不会把尚未公开的商店页面伪装成可用入口。</div>
       </section>
       <section>
         <h2>安装后如何确认</h2>
@@ -92,7 +95,7 @@
         <details><summary>Chrome 提示找不到 manifest.json</summary><p>通常是选择了 ZIP、选择了解压目录外面多一层的父目录，或者 ZIP 没有完整解压。请进入目录确认能够直接看到 manifest.json，再重新加载。</p></details>
         <details><summary>重启 Chrome 后扩展不见了</summary><p>先检查原解压目录是否被移动、改名或删除，再到扩展管理页确认扩展仍然启用。</p></details>
         <details><summary>Agent 提示扩展需要修复</summary><p>运行 <code>ora-workbench extension repair</code>。CLI 会重新下载并校验官方 ZIP，修复同一个固定目录；完成后在扩展管理页点击“重新加载”。</p></details>
-        <details><summary>为什么会看到开发者模式提示？</summary><p>这是 Chrome 对手动加载 ZIP 解压目录的正常提示。能够访问 Chrome Web Store 的用户在商店版本审核通过后可改用商店安装，不需要开发者模式。</p></details>
+        <details><summary>为什么会看到开发者模式提示？</summary><p>这是 Chrome 对手动加载 ZIP 解压目录的正常提示。通过 Chrome Web Store 安装的用户不需要开启开发者模式。</p></details>
         <details><summary>为什么不需要 API Key 或配对码？</summary><p>扩展只在首次使用时连接本机 Agent，由本机 Agent 完成账户校验。之后每次从当前招聘页面代建短期会话，并把申请和填写证据同步到 Web；通用 API Key 不进入扩展。商店版与 ZIP 版都遵守同一边界。</p></details>
         <details><summary>扩展提示需要先导入标准简历</summary><p>请让本机 Agent 读取你明确指定的标准简历并提交档案提案，再到 Web 工作台确认。扩展不会把招聘页面上的筛选项或表单选项当成你的个人档案。</p></details>
         <details><summary>扩展会替我提交申请吗？</summary><p>不会。附件、验证码、声明、下一步和最终提交仍由你本人完成。</p></details>
