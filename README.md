@@ -100,6 +100,24 @@ ora-workbench profile-handoff start
 复核后保存在本机资料库。AgentMesh360 云端不接收这些答案。Chrome 扩展随后只读取当前
 填写任务需要的本机字段，不会取得整份资料库。
 
+## 数据盘点与删除
+
+用户可以在 Web 工作台“数据管理”中查看来源、机会、申请、档案、Agent 提案和活动记录，
+按模块预览并删除，或删除全部官网招聘工作台数据。宿主 Agent 也可以使用同一套服务合同：
+
+```bash
+ora-workbench data inventory
+ora-workbench data delete-preview --scope applications
+```
+
+宿主 Agent 必须先向用户说明当前数据、连带影响和不会受到影响的账户权益，并等待用户针对
+当前预览明确要求删除，才能运行 `data delete-confirm`。删除预览绑定账户、数据快照和一次
+性确认码；跨账户、过期、数据已变化或重复执行都有确定的拒绝或回执结果。
+
+删除本产品工作台数据不会删除 AgentMesh360 账户、API Key、通行证、共享 Credit 余额或
+Core 账本，也不会自动退款。本机补充资料由用户自己的本机 Agent 单独管理，原始简历文件
+仍由用户自行保管。
+
 ## 安全边界
 
 - Cookie、密码和登录态留在用户浏览器中；

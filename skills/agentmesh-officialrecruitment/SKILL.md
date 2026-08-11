@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.1
+version: 0.3.2
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -202,6 +202,41 @@ authorized development test.
 - Never invent an evidence reference. User-reported evidence must be labeled as
   user-reported, not as website-confirmed.
 - Tell the user when a proposal still requires Web confirmation.
+
+## User Data Inventory And Deletion
+
+Treat data deletion as a fresh, preview-bound user decision. Never infer it
+from a request to tidy, reset, restart, sign out or remove one visible card.
+
+1. Run `ora-workbench data inventory` and present every returned category,
+   business-object count and associated-record count. Explain the returned
+   local-data and AgentMesh360 account boundaries.
+2. Ask which exact scope the user wants to delete. The valid scopes are
+   `sources`, `opportunities`, `applications`, `profiles`, `proposals`,
+   `activity` and `all`. Do not expand a module request to `all`.
+3. Run `ora-workbench data delete-preview --scope <scope>` and present the
+   complete `deletion_counts`, `dependencies`, `not_affected`, refund boundary,
+   expiry and one-time `confirmation_code`.
+4. Wait for an explicit instruction that refers to this current preview. Do
+   not treat an earlier or general deletion request as confirmation, do not
+   confirm on the user's behalf, and do not reuse an expired preview.
+5. Only after that instruction, run the exact bound command:
+
+   ```bash
+   ora-workbench data delete-confirm \
+     --deletion-id <current-deletion-id> \
+     --snapshot-digest <current-snapshot-digest> \
+     --confirmation-code <current-confirmation-code>
+   ```
+
+6. Present the receipt and run `ora-workbench data inventory` again. State
+   what remains. Never claim that this product deletion removed the
+   AgentMesh360 account, API Key, Pass, Credit ledger, local private facts or
+   the user's original resume file.
+
+If the server reports that the preview is stale, expired, mismatched or belongs
+to another account, stop. Run a new inventory and preview; never patch around
+the check or construct a replacement confirmation code.
 
 ## Stop Conditions
 

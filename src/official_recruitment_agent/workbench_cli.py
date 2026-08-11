@@ -317,6 +317,20 @@ def _doctor(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _data_item_limit(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "item limit must be an integer from 0 to 100"
+        ) from error
+    if not 0 <= parsed <= 100:
+        raise argparse.ArgumentTypeError(
+            "item limit must be an integer from 0 to 100"
+        )
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     config = _load_config()
     parser = argparse.ArgumentParser(
@@ -443,6 +457,39 @@ def build_parser() -> argparse.ArgumentParser:
 
     questions = subparsers.add_parser("profile-questions")
     questions.add_argument("--fill-task-id")
+    data = subparsers.add_parser(
+        "data",
+        help="盘点并按用户明确指令删除云端工作台数据",
+    )
+    data_commands = data.add_subparsers(
+        dest="data_command",
+        required=True,
+    )
+    data_inventory = data_commands.add_parser("inventory")
+    data_inventory.add_argument(
+        "--item-limit",
+        type=_data_item_limit,
+        default=100,
+        metavar="0-100",
+    )
+    data_preview = data_commands.add_parser("delete-preview")
+    data_preview.add_argument(
+        "--scope",
+        required=True,
+        choices=[
+            "sources",
+            "opportunities",
+            "applications",
+            "profiles",
+            "proposals",
+            "activity",
+            "all",
+        ],
+    )
+    data_confirm = data_commands.add_parser("delete-confirm")
+    data_confirm.add_argument("--deletion-id", required=True)
+    data_confirm.add_argument("--snapshot-digest", required=True)
+    data_confirm.add_argument("--confirmation-code", required=True)
     return parser
 
 
@@ -617,6 +664,36 @@ def main(argv: list[str] | None = None) -> int:
             if args.fill_task_id:
                 path += f"?fill_task_id={quote(args.fill_task_id)}"
             result = _request(args, "GET", path)
+        elif args.command == "data":
+            if args.data_command == "inventory":
+                result = _request(
+                    args,
+                    "GET",
+                    (
+                        "/api/v1/workbench/data-inventory"
+                        f"?item_limit={args.item_limit}"
+                    ),
+                )
+            elif args.data_command == "delete-preview":
+                result = _request(
+                    args,
+                    "POST",
+                    "/api/v1/workbench/data-deletions/preview",
+                    {"scope": args.scope},
+                )
+            else:
+                result = _request(
+                    args,
+                    "POST",
+                    (
+                        "/api/v1/workbench/data-deletions/"
+                        f"{quote(args.deletion_id, safe='')}/confirm"
+                    ),
+                    {
+                        "snapshot_digest": args.snapshot_digest,
+                        "confirmation_code": args.confirmation_code,
+                    },
+                )
     except (HTTPError, URLError, OSError, ValueError) as error:
         print(
             json.dumps(
@@ -1079,7 +1156,7 @@ def _request(
         else None
     )
     headers = {"Accept": "application/json"}
-    if args.api_key:
+    if args.api_key and not is_local:
         headers["Authorization"] = f"Bearer {args.api_key}"
     else:
         headers.update(

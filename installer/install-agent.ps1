@@ -5,7 +5,7 @@ $BaseUrl = if ($env:ORA_INSTALL_BASE_URL) {
 } else {
     "https://recruit.agentmesh360.com"
 }
-$AdapterVersion = "0.1.5"
+$AdapterVersion = "0.1.6"
 $LocalAppData = if ($env:LOCALAPPDATA) {
     $env:LOCALAPPDATA
 } else {

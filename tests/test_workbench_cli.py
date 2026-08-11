@@ -101,6 +101,143 @@ def test_production_cli_sends_universal_key_without_spoofable_surface(
     assert "X-ora-surface" not in request.headers
 
 
+def test_local_cli_never_sends_configured_api_key(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _Response(
+            {
+                "contract_version": "workbench-data-inventory-v1",
+                "categories": [],
+                "total_record_count": 0,
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    code = cli_module.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:18013",
+            "--account",
+            "acct-local-test",
+            "--actor",
+            "agent-local-test",
+            "--api-key",
+            "agentmesh_live_must-not-leave-device",
+            "data",
+            "inventory",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["total_record_count"] == 0
+    request, timeout = requests[0]
+    assert timeout == 10
+    assert request.headers.get("Authorization") is None
+    assert request.headers["X-ora-account"] == "acct-local-test"
+    assert request.headers["X-ora-actor"] == "agent-local-test"
+    assert request.headers["X-ora-surface"] == "mcp"
+
+
+def test_data_inventory_and_preview_use_the_shared_server_contract(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if request.full_url.endswith("item_limit=25"):
+            return _Response(
+                {
+                    "contract_version": "workbench-data-inventory-v1",
+                    "categories": [],
+                    "total_record_count": 0,
+                }
+            )
+        return _Response(
+            {
+                "contract_version": "workbench-data-deletion-v1",
+                "deletion_id": "delete-test",
+                "scope": "profiles",
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    common = [
+        "--base-url",
+        "https://recruit.agentmesh360.test",
+        "--api-key",
+        "agentmesh_live_test-key",
+        "data",
+    ]
+    assert cli_module.main([*common, "inventory", "--item-limit", "25"]) == 0
+    inventory = json.loads(capsys.readouterr().out)
+    assert inventory["contract_version"] == "workbench-data-inventory-v1"
+    assert (
+        cli_module.main(
+            [*common, "delete-preview", "--scope", "profiles"]
+        )
+        == 0
+    )
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["scope"] == "profiles"
+    assert requests[0][0].method == "GET"
+    assert requests[1][0].method == "POST"
+    assert json.loads(requests[1][0].data) == {"scope": "profiles"}
+
+
+def test_data_delete_confirm_forwards_exact_preview_binding(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _Response(
+            {
+                "contract_version": "workbench-data-deletion-v1",
+                "receipt_id": "receipt-test",
+                "replayed": False,
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    digest = "a" * 64
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.test",
+            "--api-key",
+            "agentmesh_live_test-key",
+            "data",
+            "delete-confirm",
+            "--deletion-id",
+            "delete_1234567890",
+            "--snapshot-digest",
+            digest,
+            "--confirmation-code",
+            "DELETE-12AB34CD",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["receipt_id"] == "receipt-test"
+    request = requests[0][0]
+    assert request.full_url.endswith(
+        "/api/v1/workbench/data-deletions/delete_1234567890/confirm"
+    )
+    assert json.loads(request.data) == {
+        "snapshot_digest": digest,
+        "confirmation_code": "DELETE-12AB34CD",
+    }
+
+
 def test_transition_proposal_requires_at_least_one_evidence_ref() -> None:
     with pytest.raises(SystemExit) as error:
         cli_module.build_parser().parse_args(
