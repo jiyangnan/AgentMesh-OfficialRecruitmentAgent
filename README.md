@@ -103,15 +103,16 @@ ora-workbench profile-handoff start
 ## 数据盘点与删除
 
 用户可以在 Web 工作台“数据管理”中查看来源、机会、申请、档案、Agent 提案和活动记录，
-按模块预览并删除，或删除全部官网招聘工作台数据。宿主 Agent 也可以使用同一套服务合同：
+逐条选择需要删除的记录。宿主 Agent 也可以使用同一套服务合同：
 
 ```bash
 ora-workbench data inventory
-ora-workbench data delete-preview --scope applications
+ora-workbench data delete-preview --item sources:<source-id>
 ```
 
 宿主 Agent 必须先向用户说明当前数据、连带影响和不会受到影响的账户权益，并等待用户针对
-当前预览明确要求删除，才能运行 `data delete-confirm`。删除预览绑定账户、数据快照和一次
+当前预览明确要求删除，才能运行 `data delete-confirm`。不得把一条记录扩张成整个类别或
+其他用户的数据。删除预览绑定账户、精确记录清单、数据快照和一次
 性确认码；跨账户、过期、数据已变化或重复执行都有确定的拒绝或回执结果。
 
 若确认删除时返回申请辅助计费尚未核对，宿主 Agent 会先说明情况，并在用户明确要求继续

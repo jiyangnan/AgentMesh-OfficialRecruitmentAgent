@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.3
+version: 0.3.4
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -211,10 +211,12 @@ from a request to tidy, reset, restart, sign out or remove one visible card.
 1. Run `ora-workbench data inventory` and present every returned category,
    business-object count and associated-record count. Explain the returned
    local-data and AgentMesh360 account boundaries.
-2. Ask which exact scope the user wants to delete. The valid scopes are
-   `sources`, `opportunities`, `applications`, `profiles`, `proposals`,
-   `activity` and `all`. Do not expand a module request to `all`.
-3. Run `ora-workbench data delete-preview --scope <scope>` and present the
+2. Ask which exact records the user wants to delete. Resolve each record to
+   its category and ID from inventory. Never expand one named record into its
+   category, another record, all records, or another account.
+3. Run `ora-workbench data delete-preview --item <category>:<record-id>` for
+   one record; repeat `--item` only for records the user explicitly selected.
+   Present the
    complete `deletion_counts`, `dependencies`, `not_affected`, refund boundary,
    expiry and one-time `confirmation_code`.
 4. Wait for an explicit instruction that refers to this current preview. Do

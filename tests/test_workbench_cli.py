@@ -228,9 +228,14 @@ def test_data_inventory_and_preview_use_the_shared_server_contract(
             )
         return _Response(
             {
-                "contract_version": "workbench-data-deletion-v1",
+                "contract_version": "workbench-data-deletion-v2",
                 "deletion_id": "delete-test",
-                "scope": "profiles",
+                "selected_items": [
+                    {
+                        "category": "profiles",
+                        "item_id": "profile-test",
+                    }
+                ],
             }
         )
 
@@ -247,15 +252,24 @@ def test_data_inventory_and_preview_use_the_shared_server_contract(
     assert inventory["contract_version"] == "workbench-data-inventory-v1"
     assert (
         cli_module.main(
-            [*common, "delete-preview", "--scope", "profiles"]
+            [
+                *common,
+                "delete-preview",
+                "--item",
+                "profiles:profile-test",
+            ]
         )
         == 0
     )
     preview = json.loads(capsys.readouterr().out)
-    assert preview["scope"] == "profiles"
+    assert preview["selected_items"][0]["item_id"] == "profile-test"
     assert requests[0][0].method == "GET"
     assert requests[1][0].method == "POST"
-    assert json.loads(requests[1][0].data) == {"scope": "profiles"}
+    assert json.loads(requests[1][0].data) == {
+        "items": [
+            {"category": "profiles", "item_id": "profile-test"}
+        ]
+    }
 
 
 def test_data_delete_confirm_forwards_exact_preview_binding(
@@ -268,7 +282,7 @@ def test_data_delete_confirm_forwards_exact_preview_binding(
         requests.append((request, timeout))
         return _Response(
             {
-                "contract_version": "workbench-data-deletion-v1",
+                "contract_version": "workbench-data-deletion-v2",
                 "receipt_id": "receipt-test",
                 "replayed": False,
             }

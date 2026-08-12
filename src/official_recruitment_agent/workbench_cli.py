@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -326,13 +327,34 @@ def _data_item_limit(value: str) -> int:
         parsed = int(value)
     except ValueError as error:
         raise argparse.ArgumentTypeError(
-            "item limit must be an integer from 0 to 100"
+            "item limit must be an integer from 0 to 500"
         ) from error
-    if not 0 <= parsed <= 100:
+    if not 0 <= parsed <= 500:
         raise argparse.ArgumentTypeError(
-            "item limit must be an integer from 0 to 100"
+            "item limit must be an integer from 0 to 500"
         )
     return parsed
+
+
+def _data_deletion_item(value: str) -> dict[str, str]:
+    category, separator, item_id = value.partition(":")
+    if (
+        separator != ":"
+        or category
+        not in {
+            "sources",
+            "opportunities",
+            "applications",
+            "profiles",
+            "proposals",
+            "activity",
+        }
+        or not re.fullmatch(r"[A-Za-z0-9_-]{3,80}", item_id)
+    ):
+        raise argparse.ArgumentTypeError(
+            "item must use <category>:<record-id> from data inventory"
+        )
+    return {"category": category, "item_id": item_id}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -473,22 +495,19 @@ def build_parser() -> argparse.ArgumentParser:
     data_inventory.add_argument(
         "--item-limit",
         type=_data_item_limit,
-        default=100,
-        metavar="0-100",
+        default=500,
+        metavar="0-500",
     )
     data_preview = data_commands.add_parser("delete-preview")
     data_preview.add_argument(
-        "--scope",
+        "--item",
+        action="append",
+        type=_data_deletion_item,
         required=True,
-        choices=[
-            "sources",
-            "opportunities",
-            "applications",
-            "profiles",
-            "proposals",
-            "activity",
-            "all",
-        ],
+        help=(
+            "明确记录，格式 <category>:<record-id>；"
+            "批量删除时重复传入"
+        ),
     )
     data_confirm = data_commands.add_parser("delete-confirm")
     data_confirm.add_argument("--deletion-id", required=True)
@@ -700,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
                     args,
                     "POST",
                     "/api/v1/workbench/data-deletions/preview",
-                    {"scope": args.scope},
+                    {"items": args.item},
                 )
             elif args.data_command == "delete-confirm":
                 result = _request(
