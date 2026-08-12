@@ -38,6 +38,7 @@ from official_recruitment_agent.workbench.profile_contract import (
 )
 from official_recruitment_agent.local_profile_handoff import (
     LOCAL_HANDOFF_URL,
+    LocalHandoffError,
     LocalHandoffService,
     LocalProfileStore,
     ProductClient,
@@ -561,10 +562,22 @@ def main(argv: list[str] | None = None) -> int:
                     result["opened"] = open_extension_setup(extension_root)
                 result["native_host"] = native_host
                 if is_local_product_url(args.base_url) or args.api_key:
-                    result["local_agent"] = _start_profile_handoff(
-                        args,
-                        extension_root=extension_root,
-                    )
+                    try:
+                        result["local_agent"] = _start_profile_handoff(
+                            args,
+                            extension_root=extension_root,
+                        )
+                    except LocalHandoffError as error:
+                        if not is_local_product_url(args.base_url):
+                            raise
+                        result["local_agent"] = {
+                            "status": "not_connected",
+                            "reason": error.code,
+                            "message": (
+                                "扩展已准备完成；当前本机地址未运行工作台，"
+                                "因此没有启动本机 Agent 连接。"
+                            ),
+                        }
                 result["manual_steps"] = [
                     "在 Chrome 扩展管理页开启开发者模式。",
                     "点击加载已解压的扩展程序。",

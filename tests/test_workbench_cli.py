@@ -584,6 +584,64 @@ def test_local_extension_prepare_starts_handoff_without_api_key(
     )
 
 
+def test_local_extension_prepare_survives_download_only_server(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    extension_root = tmp_path / "extension"
+    monkeypatch.setattr(
+        cli_module,
+        "prepare_extension",
+        lambda *_args, **_kwargs: {"status": "ready", "healthy": True},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda **_kwargs: {"status": "ready"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_start_profile_handoff",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            cli_module.LocalHandoffError(
+                404,
+                "product_handoff_rejected",
+                "download-only server",
+            )
+        ),
+    )
+
+    code = cli_module.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:18127",
+            "extension",
+            "prepare",
+            "--install-dir",
+            str(extension_root),
+            "--no-open",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ready"
+    assert payload["local_agent"] == {
+        "status": "not_connected",
+        "reason": "product_handoff_rejected",
+        "message": (
+            "扩展已准备完成；当前本机地址未运行工作台，"
+            "因此没有启动本机 Agent 连接。"
+        ),
+    }
+
+
 def test_extension_repair_forces_verified_redownload(
     monkeypatch,
     capsys,
