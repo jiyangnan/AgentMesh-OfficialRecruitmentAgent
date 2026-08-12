@@ -38,10 +38,14 @@ from official_recruitment_agent.workbench.profile_contract import (
 )
 from official_recruitment_agent.local_profile_handoff import (
     LOCAL_HANDOFF_URL,
+    LocalHandoffError,
     LocalHandoffService,
     LocalProfileStore,
     ProductClient,
     default_local_profile_path,
+    is_https_product_url,
+    is_local_product_url,
+    open_without_redirect,
     serve_local_handoff,
 )
 
@@ -490,6 +494,13 @@ def build_parser() -> argparse.ArgumentParser:
     data_confirm.add_argument("--deletion-id", required=True)
     data_confirm.add_argument("--snapshot-digest", required=True)
     data_confirm.add_argument("--confirmation-code", required=True)
+    data_reconcile = data_commands.add_parser(
+        "reconcile-billing",
+        help="核对并处理阻塞删除的申请辅助计费状态",
+    )
+    data_reconcile.add_argument("--deletion-id", required=True)
+    data_reconcile.add_argument("--snapshot-digest", required=True)
+    data_reconcile.add_argument("--confirmation-code", required=True)
     return parser
 
 
@@ -550,13 +561,23 @@ def main(argv: list[str] | None = None) -> int:
                 if not args.no_open:
                     result["opened"] = open_extension_setup(extension_root)
                 result["native_host"] = native_host
-                if args.api_key and not args.base_url.startswith(
-                    ("http://127.0.0.1:", "http://localhost:")
-                ):
-                    result["local_agent"] = _start_profile_handoff(
-                        args,
-                        extension_root=extension_root,
-                    )
+                if is_local_product_url(args.base_url) or args.api_key:
+                    try:
+                        result["local_agent"] = _start_profile_handoff(
+                            args,
+                            extension_root=extension_root,
+                        )
+                    except LocalHandoffError as error:
+                        if not is_local_product_url(args.base_url):
+                            raise
+                        result["local_agent"] = {
+                            "status": "not_connected",
+                            "reason": error.code,
+                            "message": (
+                                "扩展已准备完成；当前本机地址未运行工作台，"
+                                "因此没有启动本机 Agent 连接。"
+                            ),
+                        }
                 result["manual_steps"] = [
                     "在 Chrome 扩展管理页开启开发者模式。",
                     "点击加载已解压的扩展程序。",
@@ -681,13 +702,27 @@ def main(argv: list[str] | None = None) -> int:
                     "/api/v1/workbench/data-deletions/preview",
                     {"scope": args.scope},
                 )
-            else:
+            elif args.data_command == "delete-confirm":
                 result = _request(
                     args,
                     "POST",
                     (
                         "/api/v1/workbench/data-deletions/"
                         f"{quote(args.deletion_id, safe='')}/confirm"
+                    ),
+                    {
+                        "snapshot_digest": args.snapshot_digest,
+                        "confirmation_code": args.confirmation_code,
+                    },
+                )
+            else:
+                result = _request(
+                    args,
+                    "POST",
+                    (
+                        "/api/v1/workbench/data-deletions/"
+                        f"{quote(args.deletion_id, safe='')}/"
+                        "reconcile-billing"
                     ),
                     {
                         "snapshot_digest": args.snapshot_digest,
@@ -715,24 +750,25 @@ def _configure(args: argparse.Namespace) -> dict[str, Any]:
         or current.get("base_url")
         or DEFAULT_BASE_URL
     ).rstrip("/")
-    api_key = args.key or args.api_key or current.get("api_key")
-    if not api_key:
-        raise ValueError("请通过 --key 提供 AgentMesh360 API Key。")
-    if not (
-        base_url.startswith("https://")
-        or base_url.startswith("http://127.0.0.1:")
-        or base_url.startswith("http://localhost:")
-    ):
+    is_local = is_local_product_url(base_url)
+    if not is_local and not is_https_product_url(base_url):
         raise ValueError("工作台地址必须使用 HTTPS 或本机开发地址。")
+    api_key = None if is_local else (
+        args.key or args.api_key or current.get("api_key")
+    )
+    if not api_key and not is_local:
+        raise ValueError("请通过 --key 提供 AgentMesh360 API Key。")
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    config_payload: dict[str, Any] = {
+        "schema_version": 1,
+        "base_url": base_url,
+    }
+    if api_key:
+        config_payload["api_key"] = api_key
     path.write_text(
         json.dumps(
-            {
-                "schema_version": 1,
-                "base_url": base_url,
-                "api_key": api_key,
-            },
+            config_payload,
             ensure_ascii=False,
             indent=2,
         )
@@ -745,7 +781,7 @@ def _configure(args: argparse.Namespace) -> dict[str, Any]:
         "status": "configured",
         "config_path": str(path),
         "server_url": base_url,
-        "api_key_configured": True,
+        "api_key_configured": bool(api_key),
         "permissions": (
             "user_profile_acl" if os.name == "nt" else "0600"
         ),
@@ -872,13 +908,14 @@ def _local_handoff_service(
 def _product_and_workspace(
     args: argparse.Namespace,
 ) -> tuple[ProductClient, str]:
-    if not args.api_key:
+    is_local = is_local_product_url(args.base_url)
+    if not args.api_key and not is_local:
         raise ValueError(
             "本机 Agent 交接需要已配置的 AgentMesh360 API Key。"
         )
     product = ProductClient(
         base_url=args.base_url.rstrip("/"),
-        api_key=args.api_key,
+        api_key=args.api_key if not is_local else None,
         account_ref=args.account,
         actor_id=args.actor,
     )
@@ -898,7 +935,7 @@ def _query_local_handoff(
             "Accept": "application/json",
             "Origin": (
                 "https://recruit.agentmesh360.com"
-                if args.base_url.startswith("https://")
+                if is_https_product_url(args.base_url)
                 else "http://127.0.0.1:8010"
             ),
         },
@@ -1068,7 +1105,10 @@ def _start_profile_handoff(
     with log_path.open("ab") as log:
         child_environment = os.environ.copy()
         child_environment["ORA_WORKBENCH_URL"] = args.base_url.rstrip("/")
-        child_environment["AGENTMESH_API_KEY"] = args.api_key
+        if is_local_product_url(args.base_url):
+            child_environment.pop("AGENTMESH_API_KEY", None)
+        else:
+            child_environment["AGENTMESH_API_KEY"] = args.api_key
         child_environment["ORA_ACCOUNT_REF"] = args.account
         child_environment["ORA_ACTOR_ID"] = args.actor
         if extension_root is not None:
@@ -1142,9 +1182,9 @@ def _request(
     idempotency_key: str | None = None,
 ) -> Any:
     base_url = args.base_url.rstrip("/")
-    is_local = base_url.startswith(
-        ("http://127.0.0.1:", "http://localhost:")
-    )
+    is_local = is_local_product_url(base_url)
+    if not is_local and not is_https_product_url(base_url):
+        raise ValueError("非本机工作台必须使用 HTTPS。")
     if not args.api_key and not is_local:
         raise ValueError(
             "生产工作台需要 AgentMesh360 API Key；"
@@ -1176,7 +1216,7 @@ def _request(
         headers=headers,
         method=method,
     )
-    with urlopen(request, timeout=10) as response:
+    with open_without_redirect(request, timeout=10) as response:
         return json.loads(response.read())
 
 

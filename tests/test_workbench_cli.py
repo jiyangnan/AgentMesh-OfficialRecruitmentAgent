@@ -77,7 +77,7 @@ def test_production_cli_sends_universal_key_without_spoofable_surface(
         requests.append((request, timeout))
         return _Response()
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
     code = cli_module.main(
         [
             "--base-url",
@@ -117,7 +117,7 @@ def test_local_cli_never_sends_configured_api_key(
             }
         )
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
     code = cli_module.main(
         [
             "--base-url",
@@ -141,6 +141,73 @@ def test_local_cli_never_sends_configured_api_key(
     assert request.headers["X-ora-account"] == "acct-local-test"
     assert request.headers["X-ora-actor"] == "agent-local-test"
     assert request.headers["X-ora-surface"] == "mcp"
+
+
+def test_cli_rejects_plain_http_non_loopback_without_sending_key(
+    monkeypatch,
+    capsys,
+) -> None:
+    called = False
+
+    def fake_urlopen(_request, _timeout):
+        nonlocal called
+        called = True
+        return _Response()
+
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
+    code = cli_module.main(
+        [
+            "--base-url",
+            "http://localhost.attacker.example",
+            "--api-key",
+            "agentmesh_live_must-not-leak",
+            "summary",
+        ]
+    )
+
+    assert code == 2
+    assert called is False
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"]["code"] == "workbench_unreachable"
+    assert "必须使用 HTTPS" in payload["error"]["message"]
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://0177.0.0.1:8010",
+        "http://127.1:8010",
+        "http://2130706433:8010",
+    ],
+)
+def test_cli_rejects_ambiguous_numeric_http_without_network(
+    monkeypatch,
+    capsys,
+    base_url,
+) -> None:
+    called = False
+
+    def fake_urlopen(_request, _timeout):
+        nonlocal called
+        called = True
+        return _Response()
+
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
+    code = cli_module.main(
+        [
+            "--base-url",
+            base_url,
+            "--api-key",
+            "agentmesh_live_must-not-leak",
+            "summary",
+        ]
+    )
+
+    assert code == 2
+    assert called is False
+    assert "必须使用 HTTPS" in json.loads(capsys.readouterr().out)[
+        "error"
+    ]["message"]
 
 
 def test_data_inventory_and_preview_use_the_shared_server_contract(
@@ -167,7 +234,7 @@ def test_data_inventory_and_preview_use_the_shared_server_contract(
             }
         )
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
     common = [
         "--base-url",
         "https://recruit.agentmesh360.test",
@@ -207,7 +274,7 @@ def test_data_delete_confirm_forwards_exact_preview_binding(
             }
         )
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
     digest = "a" * 64
     code = cli_module.main(
         [
@@ -231,6 +298,57 @@ def test_data_delete_confirm_forwards_exact_preview_binding(
     request = requests[0][0]
     assert request.full_url.endswith(
         "/api/v1/workbench/data-deletions/delete_1234567890/confirm"
+    )
+    assert json.loads(request.data) == {
+        "snapshot_digest": digest,
+        "confirmation_code": "DELETE-12AB34CD",
+    }
+
+
+def test_data_reconcile_billing_forwards_exact_preview_binding(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _Response(
+            {
+                "contract_version": (
+                    "workbench-billing-reconciliation-v1"
+                ),
+                "deletion_id": "delete_1234567890",
+                "status": "reconciled",
+                "preview_invalidated": True,
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
+    digest = "c" * 64
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.test",
+            "--api-key",
+            "agentmesh_live_test-key",
+            "data",
+            "reconcile-billing",
+            "--deletion-id",
+            "delete_1234567890",
+            "--snapshot-digest",
+            digest,
+            "--confirmation-code",
+            "DELETE-12AB34CD",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "reconciled"
+    request = requests[0][0]
+    assert request.full_url.endswith(
+        "/api/v1/workbench/data-deletions/"
+        "delete_1234567890/reconcile-billing"
     )
     assert json.loads(request.data) == {
         "snapshot_digest": digest,
@@ -409,6 +527,121 @@ def test_agent_prepares_extension_without_claiming_silent_chrome_install(
     ]
 
 
+def test_local_extension_prepare_starts_handoff_without_api_key(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    extension_root = tmp_path / "extension"
+    starts = []
+    monkeypatch.setenv(
+        "ORA_CONFIG_PATH",
+        str(tmp_path / "missing-config.json"),
+    )
+    monkeypatch.delenv("AGENTMESH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        cli_module,
+        "prepare_extension",
+        lambda *_args, **_kwargs: {"status": "ready"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda **_kwargs: {"status": "ready"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_start_profile_handoff",
+        lambda args, *, extension_root: (
+            starts.append((args.api_key, extension_root))
+            or {"status": "ready"}
+        ),
+    )
+
+    code = cli_module.main(
+        [
+            "--base-url",
+            "http://localhost.:8010",
+            "--account",
+            "acct-local-extension",
+            "extension",
+            "prepare",
+            "--install-dir",
+            str(extension_root),
+            "--no-open",
+        ]
+    )
+
+    assert code == 0
+    assert starts == [(None, extension_root)]
+    assert json.loads(capsys.readouterr().out)["local_agent"]["status"] == (
+        "ready"
+    )
+
+
+def test_local_extension_prepare_survives_download_only_server(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    extension_root = tmp_path / "extension"
+    monkeypatch.setattr(
+        cli_module,
+        "prepare_extension",
+        lambda *_args, **_kwargs: {"status": "ready", "healthy": True},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda **_kwargs: {"status": "ready"},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_start_profile_handoff",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            cli_module.LocalHandoffError(
+                404,
+                "product_handoff_rejected",
+                "download-only server",
+            )
+        ),
+    )
+
+    code = cli_module.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:18127",
+            "extension",
+            "prepare",
+            "--install-dir",
+            str(extension_root),
+            "--no-open",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ready"
+    assert payload["local_agent"] == {
+        "status": "not_connected",
+        "reason": "product_handoff_rejected",
+        "message": (
+            "扩展已准备完成；当前本机地址未运行工作台，"
+            "因此没有启动本机 Agent 连接。"
+        ),
+    }
+
+
 def test_extension_repair_forces_verified_redownload(
     monkeypatch,
     capsys,
@@ -555,6 +788,99 @@ def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
     assert calls == {"cloud": 1, "local": 2, "spawn": 1}
 
 
+def test_local_product_workspace_discovery_does_not_require_or_forward_key(
+    monkeypatch,
+) -> None:
+    captured = {}
+
+    class FakeProductClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        @staticmethod
+        def access():
+            return {"workspace_ref": _test_workspace_ref("1")}
+
+    monkeypatch.setattr(cli_module, "ProductClient", FakeProductClient)
+    args = cli_module.argparse.Namespace(
+        base_url="http://127.0.0.1:8010",
+        api_key=None,
+        account="acct-local-workspace",
+        actor="agent-local-workspace",
+    )
+
+    _product, workspace_ref = cli_module._product_and_workspace(args)
+
+    assert workspace_ref == _test_workspace_ref("1")
+    assert captured["api_key"] is None
+    assert captured["account_ref"] == "acct-local-workspace"
+
+
+def test_local_handoff_child_starts_without_key_and_scrubs_parent_key(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace_ref = _test_workspace_ref("2")
+    captured_environment = {}
+    queries = 0
+
+    monkeypatch.setenv("AGENTMESH_API_KEY", "parent-key-must-not-propagate")
+    monkeypatch.setattr(
+        cli_module,
+        "_product_and_workspace",
+        lambda _args: (object(), workspace_ref),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": f"orainstall_{'a' * 32}"},
+    )
+
+    def fake_query(_args, _workspace_ref):
+        nonlocal queries
+        queries += 1
+        if queries == 1:
+            raise OSError("not running")
+        return {
+            "status": "ready",
+            "extension_installation_id": f"orainstall_{'a' * 32}",
+        }
+
+    class FakeProcess:
+        pid = 60001
+
+        @staticmethod
+        def poll():
+            return None
+
+    def fake_popen(*_args, **kwargs):
+        captured_environment.update(kwargs["env"])
+        return FakeProcess()
+
+    monkeypatch.setattr(cli_module, "_query_local_handoff", fake_query)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        cli_module,
+        "_config_path",
+        lambda: tmp_path / "official-recruitment.json",
+    )
+    args = cli_module.argparse.Namespace(
+        base_url="http://localhost.:8010",
+        api_key=None,
+        account="acct-local-no-key",
+        actor="agent-local-no-key",
+    )
+
+    result = cli_module._start_profile_handoff(args)
+
+    assert result["started"] is True
+    assert "AGENTMESH_API_KEY" not in captured_environment
+    assert captured_environment["ORA_WORKBENCH_URL"] == (
+        "http://localhost.:8010"
+    )
+
+
 def test_extension_update_restarts_outdated_local_handoff(
     monkeypatch,
     tmp_path: Path,
@@ -662,7 +988,7 @@ def test_agent_proposes_structured_profile_without_uploading_resume(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     code = cli_module.main(
         [
@@ -739,7 +1065,7 @@ def test_agent_reads_questions_for_a_specific_fill_task(
             }
         )
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
     code = cli_module.main(
         [
             "--base-url",
@@ -807,6 +1133,42 @@ def test_configure_persists_key_with_private_permissions_without_printing_it(
         assert config_path.stat().st_mode & 0o777 == 0o600
 
 
+def test_configure_local_workspace_removes_stale_cloud_key(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "official-recruitment.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "base_url": "https://recruit.agentmesh360.com",
+                "api_key": "agentmesh_live_stale-cloud-key",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ORA_CONFIG_PATH", str(config_path))
+
+    code = cli_module.main(
+        [
+            "configure",
+            "--server-url",
+            "http://[::1]:8010/",
+        ]
+    )
+
+    assert code == 0
+    response = json.loads(capsys.readouterr().out)
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    assert response["api_key_configured"] is False
+    assert payload == {
+        "schema_version": 1,
+        "base_url": "http://[::1]:8010",
+    }
+
+
 def test_doctor_uses_saved_account_and_reports_profile_readiness(
     monkeypatch,
     capsys,
@@ -865,7 +1227,7 @@ def test_doctor_uses_saved_account_and_reports_profile_readiness(
             )
         return DoctorResponse({"counts": {"active_applications": 2}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     code = cli_module.main(["doctor"])
 
@@ -925,7 +1287,7 @@ def test_doctor_reports_uninitialized_for_genuine_first_use(
             return _Response([])
         return _Response({"counts": {}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     code = cli_module.main(["doctor"])
 
@@ -973,7 +1335,7 @@ def test_doctor_detects_profile_loss_after_database_is_recreated_empty(
             return _Response([])
         return _Response({"counts": {}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     assert cli_module.main(["doctor"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "ready"
@@ -1029,7 +1391,7 @@ def test_doctor_continuity_survives_api_key_rotation(
             )
         return _Response({"counts": {}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     assert cli_module.main(
         ["--api-key", "agentmesh_live_old", "doctor"]
@@ -1082,7 +1444,7 @@ def test_doctor_does_not_apply_another_accounts_continuity_marker(
             return _Response([])
         return _Response({"counts": {}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     assert cli_module.main(["doctor"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -1114,7 +1476,7 @@ def test_doctor_fails_closed_when_continuity_marker_is_corrupt(
             return _Response([])
         return _Response({"counts": {}})
 
-    monkeypatch.setattr(cli_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
 
     assert cli_module.main(["doctor"]) == 0
     payload = json.loads(capsys.readouterr().out)

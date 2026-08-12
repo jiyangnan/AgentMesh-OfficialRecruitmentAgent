@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from official_recruitment_agent.extension_identity import (
     OFFICIAL_CHROME_EXTENSION_ORIGIN,
@@ -48,6 +49,7 @@ _PAIRING_SECRET = re.compile(r"^orapair_[A-Za-z0-9_-]{32,96}$")
 _LOCAL_EXTENSION_SESSION = re.compile(
     r"^oralocalsession_[A-Za-z0-9_-]{32,128}$"
 )
+_NUMERIC_HOST_PART = re.compile(r"(?:[0-9]+|0[xX][0-9A-Fa-f]+)")
 
 
 class LocalHandoffError(Exception):
@@ -56,6 +58,53 @@ class LocalHandoffError(Exception):
         self.status = status
         self.code = code
         self.message = message
+
+
+def is_local_product_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        return False
+    hostname = parsed.hostname
+    if hostname is None:
+        return False
+    normalized_hostname = hostname.casefold().rstrip(".")
+    if normalized_hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized_hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_ambiguous_numeric_hostname(hostname: str) -> bool:
+    normalized_hostname = hostname.casefold().rstrip(".")
+    try:
+        ipaddress.ip_address(normalized_hostname)
+        return False
+    except ValueError:
+        return all(
+            _NUMERIC_HOST_PART.fullmatch(part) is not None
+            for part in normalized_hostname.split(".")
+        )
+
+
+def is_https_product_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    return bool(
+        parsed.scheme.casefold() == "https"
+        and parsed.hostname
+        and not _is_ambiguous_numeric_hostname(parsed.hostname)
+    )
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+def open_without_redirect(request: Request, *, timeout: float):
+    """Open one exact URL; never forward credentials through a redirect."""
+    return build_opener(_RejectRedirects()).open(request, timeout=timeout)
 
 
 def default_local_profile_path(
@@ -866,7 +915,7 @@ def _binding_value(
 @dataclass(slots=True)
 class ProductClient:
     base_url: str
-    api_key: str
+    api_key: str | None
     account_ref: str | None = None
     actor_id: str = "agent-local"
     timeout: float = 8.0
@@ -909,6 +958,25 @@ class ProductClient:
         *,
         extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        local_product = is_local_product_url(self.base_url)
+        if not local_product and not is_https_product_url(self.base_url):
+            raise LocalHandoffError(
+                422,
+                "insecure_product_url",
+                "非本机工作台必须使用 HTTPS。",
+            )
+        if not local_product and not self.api_key:
+            raise LocalHandoffError(
+                401,
+                "product_api_key_required",
+                "生产工作台需要 AgentMesh360 API Key。",
+            )
+        if local_product and not self.account_ref:
+            raise LocalHandoffError(
+                422,
+                "local_account_required",
+                "本机工作台需要明确的测试账户编号。",
+            )
         body = (
             json.dumps(payload, ensure_ascii=False).encode("utf-8")
             if payload is not None
@@ -916,10 +984,11 @@ class ProductClient:
         )
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
             "X-ORA-Actor": self.actor_id,
             "X-ORA-Surface": "mcp",
         }
+        if not local_product:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if self.account_ref:
             headers["X-ORA-Account"] = self.account_ref
         if body is not None:
@@ -933,7 +1002,10 @@ class ProductClient:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with open_without_redirect(
+                request,
+                timeout=self.timeout,
+            ) as response:
                 result = json.loads(response.read())
         except HTTPError as error:
             try:
