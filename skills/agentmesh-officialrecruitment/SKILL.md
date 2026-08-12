@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.2
+version: 0.3.3
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -233,6 +233,27 @@ from a request to tidy, reset, restart, sign out or remove one visible card.
    what remains. Never claim that this product deletion removed the
    AgentMesh360 account, API Key, Pass, Credit ledger, local private facts or
    the user's original resume file.
+
+If `data delete-confirm` returns `data_deletion_billing_unsettled`, do not
+delete around the billing record and do not leave the user at a dead end.
+Explain that the product must first determine whether the original metered
+request charged any Credit. After the user explicitly asks to continue this
+recovery for the current preview, run the exact bound command:
+
+```bash
+ora-workbench data reconcile-billing \
+  --deletion-id <current-deletion-id> \
+  --snapshot-digest <current-snapshot-digest> \
+  --confirmation-code <current-confirmation-code>
+```
+
+This command never deletes product data. If the original debit never happened,
+Core records a durable cancellation so a late retry cannot charge it. If the
+debit happened but the assistance result was not delivered, the product refunds
+that debit first. After reconciliation, discard the old preview, run a fresh
+inventory and `delete-preview`, present the new preview, and wait for a new
+explicit deletion instruction. Never reuse the earlier deletion instruction as
+confirmation for the fresh preview.
 
 If the server reports that the preview is stale, expired, mismatched or belongs
 to another account, stop. Run a new inventory and preview; never patch around

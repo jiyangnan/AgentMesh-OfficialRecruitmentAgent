@@ -8,6 +8,8 @@ import stat
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request
 
 import pytest
 
@@ -23,6 +25,8 @@ from official_recruitment_agent.local_profile_handoff import (
     _binding_value,
     create_handler,
     default_local_profile_path,
+    is_local_product_url,
+    open_without_redirect,
 )
 
 
@@ -50,6 +54,82 @@ def test_local_profile_path_uses_native_windows_local_app_data(
         / "OfficialRecruitment"
         / "private-profile.sqlite3"
     )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost.:8010",
+        "http://127.0.0.1:8010",
+        "http://[::1]:8010",
+    ],
+)
+def test_local_product_url_accepts_unambiguous_loopback_aliases(url: str) -> None:
+    assert is_local_product_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://0x7f000001:8010",
+        "http://0177.0.0.1:8010",
+        "http://127.1:8010",
+        "http://2130706433:8010",
+    ],
+)
+def test_local_product_url_rejects_ambiguous_numeric_hosts(url: str) -> None:
+    assert is_local_product_url(url) is False
+
+
+def test_no_redirect_opener_never_forwards_authorization() -> None:
+    first_requests: list[str | None] = []
+    redirected_requests: list[str | None] = []
+
+    class RedirectHandler(handoff_module.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            first_requests.append(self.headers.get("Authorization"))
+            self.send_response(302)
+            self.send_header("Location", redirect_url)
+            self.end_headers()
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    class TargetHandler(handoff_module.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            redirected_requests.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    target = ThreadingHTTPServer(("127.0.0.1", 0), TargetHandler)
+    redirect_url = f"http://127.0.0.1:{target.server_port}/target"
+    source = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    threads = [
+        threading.Thread(target=target.serve_forever),
+        threading.Thread(target=source.serve_forever),
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        request = Request(
+            f"http://127.0.0.1:{source.server_port}/start",
+            headers={"Authorization": "Bearer must-not-follow"},
+        )
+        with pytest.raises(HTTPError) as captured:
+            open_without_redirect(request, timeout=2)
+        assert captured.value.code == 302
+        assert first_requests == ["Bearer must-not-follow"]
+        assert redirected_requests == []
+    finally:
+        source.shutdown()
+        target.shutdown()
+        source.server_close()
+        target.server_close()
+        for thread in threads:
+            thread.join(timeout=2)
 
 
 class FakeProductClient:
@@ -122,7 +202,7 @@ def test_product_client_identifies_local_agent_surface(
         requests.append((request, timeout))
         return _ProductResponse()
 
-    monkeypatch.setattr(handoff_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(handoff_module, "open_without_redirect", fake_urlopen)
     client = ProductClient(
         base_url="http://127.0.0.1:8000",
         api_key="agentmesh_live_local-test",
@@ -133,12 +213,115 @@ def test_product_client_identifies_local_agent_surface(
     assert client.access()["workspace_ref"] == WORKSPACE_REF
     request, timeout = requests[0]
     assert timeout == 8.0
-    assert request.headers["Authorization"] == (
-        "Bearer agentmesh_live_local-test"
-    )
+    assert "Authorization" not in request.headers
     assert request.headers["X-ora-surface"] == "mcp"
     assert request.headers["X-ora-account"] == "acct-local-uat"
     assert request.headers["X-ora-actor"] == "host-agent-uat"
+
+
+def test_product_client_sends_api_key_only_to_https_product_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _ProductResponse()
+
+    monkeypatch.setattr(handoff_module, "open_without_redirect", fake_urlopen)
+    client = ProductClient(
+        base_url="https://recruit.agentmesh360.com",
+        api_key="agentmesh_live_cloud-test",
+        account_ref="acct-cloud-uat",
+        actor_id="host-agent-uat",
+    )
+
+    assert client.access()["workspace_ref"] == WORKSPACE_REF
+    request, _timeout = requests[0]
+    assert request.headers["Authorization"] == (
+        "Bearer agentmesh_live_cloud-test"
+    )
+
+
+def test_product_client_rejects_plain_http_non_loopback_without_sending_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def fake_urlopen(_request, _timeout):
+        nonlocal called
+        called = True
+        return _ProductResponse()
+
+    monkeypatch.setattr(handoff_module, "open_without_redirect", fake_urlopen)
+    client = ProductClient(
+        base_url="http://localhost.attacker.example",
+        api_key="agentmesh_live_must-not-leak",
+        account_ref="acct-cloud-uat",
+    )
+
+    with pytest.raises(LocalHandoffError) as captured:
+        client.access()
+
+    assert captured.value.code == "insecure_product_url"
+    assert called is False
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://0177.0.0.1:8010",
+        "http://127.1:8010",
+        "http://2130706433:8010",
+    ],
+)
+def test_product_client_rejects_ambiguous_numeric_http_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    called = False
+
+    def fake_urlopen(_request, _timeout):
+        nonlocal called
+        called = True
+        return _ProductResponse()
+
+    monkeypatch.setattr(handoff_module, "open_without_redirect", fake_urlopen)
+    client = ProductClient(
+        base_url=base_url,
+        api_key="agentmesh_live_must-not-leak",
+        account_ref="acct-cloud-uat",
+    )
+
+    with pytest.raises(LocalHandoffError) as captured:
+        client.access()
+
+    assert captured.value.code == "insecure_product_url"
+    assert called is False
+
+
+def test_product_client_rejects_ambiguous_hex_loopback_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def fake_urlopen(_request, _timeout):
+        nonlocal called
+        called = True
+        return _ProductResponse()
+
+    monkeypatch.setattr(handoff_module, "open_without_redirect", fake_urlopen)
+    client = ProductClient(
+        base_url="https://0x7f000001:8010",
+        api_key="agentmesh_live_cloud-test",
+        account_ref="acct-cloud-uat",
+    )
+
+    with pytest.raises(LocalHandoffError) as captured:
+        client.access()
+
+    assert captured.value.code == "insecure_product_url"
+    assert called is False
 
 
 def _resolved(*, web_origin: str = "https://recruit.agentmesh360.com") -> dict:
