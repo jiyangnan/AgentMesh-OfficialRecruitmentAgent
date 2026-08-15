@@ -34,6 +34,7 @@ const review = document.querySelector("#review");
 const targetOrigin = document.querySelector("#target-origin");
 const stepLabel = document.querySelector("#step-label");
 const fieldCount = document.querySelector("#field-count");
+const gateSummaryBox = document.querySelector("#gate-summary");
 const fieldList = document.querySelector("#field-list");
 const reviewApproval = document.querySelector("#review-approved");
 const executeButton = document.querySelector("#execute");
@@ -897,6 +898,54 @@ async function discoverCurrentStep(tab) {
   };
 }
 
+const GATE_TOPIC_LABELS = {
+  cohort: "应届身份",
+  political_status: "政治面貌",
+  education_level: "学历层次",
+  major: "专业",
+  age: "年龄",
+  english_level: "英语等级",
+  work_authorization: "工作许可",
+  experience_years: "工作年限",
+  salary_expectation: "薪资意向",
+  other: "其他门槛",
+};
+
+function gateTopicLabel(topic) {
+  return t(GATE_TOPIC_LABELS[topic] ?? "其他门槛");
+}
+
+function renderGateSummary(items) {
+  if (!gateSummaryBox) {
+    return;
+  }
+  const conflicts = items.reduce(
+    (total, item) => total + (Number(item.conflict_count) || 0),
+    0,
+  );
+  const suspects = items.reduce(
+    (total, item) => total + (Number(item.suspect_count) || 0),
+    0,
+  );
+  if (!items.length) {
+    gateSummaryBox.hidden = true;
+    gateSummaryBox.replaceChildren();
+    return;
+  }
+  gateSummaryBox.hidden = false;
+  gateSummaryBox.className = `gate-summary${
+    conflicts ? " gate-summary--conflict" : " gate-summary--suspect"
+  }`;
+  gateSummaryBox.textContent = conflicts
+    ? t("本步骤有 {n} 个疑似硬性门槛，其中 {m} 个与档案冲突", {
+        n: conflicts + suspects,
+        m: conflicts,
+      })
+    : t("本步骤有 {n} 个疑似硬性门槛，请对照公告要求核对", {
+        n: suspects,
+      });
+}
+
 function renderTask(task) {
   resetReviewApproval();
   const stepIndex = task.plan.step_index ?? 1;
@@ -926,6 +975,7 @@ function renderTask(task) {
       ? t(" · 待新增 {count} 条", { count: pendingRecordCount })
       : "",
   });
+  renderGateSummary(task.plan.gate_summary ?? []);
   fieldCount.title = t("本次可自动填写字段数 / 当前页面识别字段总数");
   executeButton.textContent = repeatGroups.length
     ? t("建立缺少的记录")
@@ -967,6 +1017,19 @@ function renderTask(task) {
     ];
     reason.textContent = reasonText;
     value.textContent = valueText;
+    const gateRisk = field.gate_risk;
+    if (gateRisk && (gateRisk.level === "suspect" || gateRisk.level === "conflict")) {
+      const badge = document.createElement("em");
+      badge.className = `gate-badge gate-badge--${gateRisk.level}`;
+      badge.textContent =
+        gateRisk.level === "conflict"
+          ? t("疑似与档案冲突")
+          : t("疑似硬性门槛");
+      badge.title = `${gateTopicLabel(gateRisk.topic)} · ${
+        gateRisk.evidence || t("请对照公告要求核对")
+      }`;
+      name.append(badge);
+    }
     label.append(name, reason);
     row.append(label, value);
     return row;

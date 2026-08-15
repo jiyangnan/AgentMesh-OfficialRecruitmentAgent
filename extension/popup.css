@@ -223,6 +223,50 @@ button:disabled {
   color: #986514;
 }
 
+.gate-summary {
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gate-summary--suspect {
+  background: #fdf6e3;
+  border: 1px solid #e6c96a;
+  color: #6b5410;
+}
+
+.gate-summary--conflict {
+  background: #fdeeee;
+  border: 1px solid #e2a2a2;
+  color: #8f2424;
+}
+
+.gate-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  vertical-align: 1px;
+  cursor: help;
+}
+
+.gate-badge--suspect {
+  background: #fdf6e3;
+  border: 1px solid #e6c96a;
+  color: #6b5410;
+}
+
+.gate-badge--conflict {
+  background: #fdeeee;
+  border: 1px solid #e2a2a2;
+  color: #8f2424;
+}
+
 .field-list {
   max-height: 190px;
   margin-top: 12px;

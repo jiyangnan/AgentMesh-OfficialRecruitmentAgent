@@ -125,7 +125,22 @@ const MESSAGES = {
     "填写任务当前状态为 {status}，不能执行。": "The fill task is {status} and cannot run.",
     "辅助填写会话当前状态为 {status}，不能继续。": "The assistance session is {status} and cannot continue.",
     "字段定位结果不是唯一值：{field}": "The field locator is not unique: {field}",
-    "字段结构已经变化：{field}": "The field structure changed: {field}"
+    "字段结构已经变化：{field}": "The field structure changed: {field}",
+    "本步骤有 {n} 个疑似硬性门槛，其中 {m} 个与档案冲突": "This step has {n} possible hard gates; {m} conflict with your profile.",
+    "本步骤有 {n} 个疑似硬性门槛，请对照公告要求核对": "This step has {n} possible hard gates. Check them against the announcement requirements.",
+    "疑似硬性门槛": "Possible hard gate",
+    "疑似与档案冲突": "May conflict with profile",
+    "请对照公告要求核对": "Verify against the announcement requirements",
+    "应届身份": "New-graduate status",
+    "政治面貌": "Political status",
+    "学历层次": "Education level",
+    "专业": "Major",
+    "年龄": "Age",
+    "英语等级": "English level",
+    "工作许可": "Work authorization",
+    "工作年限": "Years of experience",
+    "薪资意向": "Salary expectation",
+    "其他门槛": "Other gate"
   },
   ja: {
     "语言": "言語",
@@ -248,7 +263,22 @@ const MESSAGES = {
     "填写任务当前状态为 {status}，不能执行。": "入力タスクの状態は {status} のため実行できません。",
     "辅助填写会话当前状态为 {status}，不能继续。": "入力支援セッションの状態は {status} のため続行できません。",
     "字段定位结果不是唯一值：{field}": "項目の位置が一意ではありません：{field}",
-    "字段结构已经变化：{field}": "項目構造が変わりました：{field}"
+    "字段结构已经变化：{field}": "項目構造が変わりました：{field}",
+    "本步骤有 {n} 个疑似硬性门槛，其中 {m} 个与档案冲突": "このステップには応募必須条件と思われる項目が {n} 個あり、うち {m} 個がプロフィールと矛盾します。",
+    "本步骤有 {n} 个疑似硬性门槛，请对照公告要求核对": "このステップには応募必須条件と思われる項目が {n} 個あります。募集要項と照合してください。",
+    "疑似硬性门槛": "必須条件の可能性",
+    "疑似与档案冲突": "プロフィールと矛盾の可能性",
+    "请对照公告要求核对": "募集要項と照合してください",
+    "应届身份": "新卒区分",
+    "政治面貌": "政治面貌",
+    "学历层次": "学歴",
+    "专业": "専攻",
+    "年龄": "年齢",
+    "英语等级": "英語資格",
+    "工作许可": "就労許可",
+    "工作年限": "職務経験年数",
+    "薪资意向": "希望給与",
+    "其他门槛": "その他の条件"
   },
   ko: {
     "语言": "언어",
@@ -371,7 +401,22 @@ const MESSAGES = {
     "填写任务当前状态为 {status}，不能执行。": "입력 작업 상태가 {status}이므로 실행할 수 없습니다.",
     "辅助填写会话当前状态为 {status}，不能继续。": "입력 지원 세션 상태가 {status}이므로 계속할 수 없습니다.",
     "字段定位结果不是唯一值：{field}": "필드 위치가 고유하지 않습니다: {field}",
-    "字段结构已经变化：{field}": "필드 구조가 변경되었습니다: {field}"
+    "字段结构已经变化：{field}": "필드 구조가 변경되었습니다: {field}",
+    "本步骤有 {n} 个疑似硬性门槛，其中 {m} 个与档案冲突": "이 단계에는 응시 자격으로 추정되는 항목이 {n}개 있으며, 그중 {m}개가 프로필과 충돌합니다.",
+    "本步骤有 {n} 个疑似硬性门槛，请对照公告要求核对": "이 단계에는 응시 자격으로 추정되는 항목이 {n}개 있습니다. 공고 요건과 확인하세요.",
+    "疑似硬性门槛": "필수 요건 가능성",
+    "疑似与档案冲突": "프로필과 충돌 가능성",
+    "请对照公告要求核对": "공고 요건과 확인하세요",
+    "应届身份": "신졸 구분",
+    "政治面貌": "정치 성분",
+    "学历层次": "학력",
+    "专业": "전공",
+    "年龄": "연령",
+    "英语等级": "영어 등급",
+    "工作许可": "취업 허가",
+    "工作年限": "경력 연수",
+    "薪资意向": "희망 급여",
+    "其他门槛": "기타 요건"
   }
 };
 
