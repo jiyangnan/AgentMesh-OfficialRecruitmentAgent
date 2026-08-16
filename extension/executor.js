@@ -120,6 +120,53 @@
     return "";
   }
 
+  function structuralFieldHeading(element) {
+    let descendant = element;
+    let ancestor = element.parentElement;
+    for (let depth = 0; ancestor && ancestor !== document.body && depth < 16; depth += 1) {
+      const controls = ancestor.querySelectorAll("input, select, textarea");
+      if (controls.length > 12) break;
+      const children = Array.from(ancestor.children);
+      const branchIndex = children.findIndex(
+        (child) => child === descendant || child.contains(descendant),
+      );
+      if (branchIndex > 0) {
+        const wrapperHint = `${ancestor.id} ${ancestor.className}`;
+        for (let index = branchIndex - 1; index >= 0; index -= 1) {
+          const candidate = children[index];
+          if (
+            candidate.querySelector(
+              "input, select, textarea, button, [role=button]",
+            )
+          ) {
+            continue;
+          }
+          const candidateText = text(candidate.textContent);
+          const candidateHint = `${candidate.id} ${candidate.className}`;
+          const fieldStructure =
+            /(?:^|[-_\s])(?:form[-_\s]?item|field|entry|row|cell)(?:$|[-_\s])/i.test(
+              wrapperHint,
+            );
+          const headingStructure =
+            candidate.matches("label, dt, th, legend") ||
+            /(?:^|[-_\s])(?:title|label|caption|heading|name)(?:$|[-_\s])/i.test(
+              candidateHint,
+            );
+          if (
+            candidateText &&
+            candidateText.length <= 80 &&
+            (fieldStructure || headingStructure)
+          ) {
+            return candidateText;
+          }
+        }
+      }
+      descendant = ancestor;
+      ancestor = ancestor.parentElement;
+    }
+    return "";
+  }
+
   function hasRequiredMarker(element) {
     if (
       element.hasAttribute("required") ||
@@ -154,6 +201,8 @@
         break;
       }
     }
+    const structuralHeading = structuralFieldHeading(element);
+    if (structuralHeading) candidates.push(structuralHeading);
     return candidates.some((candidate) => /[*＊]/.test(candidate || ""));
   }
 
@@ -178,6 +227,10 @@
     if (!labels.length) {
       const tableLabel = precedingTableLabel(element);
       if (tableLabel) labels.push(tableLabel);
+    }
+    if (!labels.length) {
+      const structuralHeading = structuralFieldHeading(element);
+      if (structuralHeading) labels.push(fieldLabel(structuralHeading));
     }
     if (!labels.length && element.parentElement) {
       const wrapper = element.parentElement;
@@ -776,6 +829,82 @@
     };
   }
 
+  const TRANSIENT_SELECTOR_CLASS =
+    /active|checked|disabled|empty|error|filled|focus|hidden|hover|invalid|loading|open|readonly|required|selected|success|valid|visible/i;
+  const GENERATED_SELECTOR_CLASS =
+    /^(?:sc-|stylest__)|^(?=[A-Za-z0-9]{5,14}$)(?=.*[a-z])(?=.*[A-Z])/;
+
+  function selectorClassTokens(element) {
+    return Array.from(element.classList || [])
+      .filter((value) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(value))
+      .filter((value) => !TRANSIENT_SELECTOR_CLASS.test(value))
+      .filter((value) => !GENERATED_SELECTOR_CLASS.test(value))
+      .sort((left, right) => left.length - right.length);
+  }
+
+  function uniqueSimpleSelector(element) {
+    const candidates = [];
+    if (element.id) candidates.push(`#${CSS.escape(element.id)}`);
+    for (const className of selectorClassTokens(element)) {
+      candidates.push(`.${CSS.escape(className)}`);
+    }
+    return (
+      candidates
+        .filter((selector) => selector.length <= 500)
+        .filter((selector) => {
+          const matches = document.querySelectorAll(selector);
+          return matches.length === 1 && matches[0] === element;
+        })
+        .sort((left, right) => left.length - right.length)[0] || null
+    );
+  }
+
+  function compactChildSegment(element) {
+    const parent = element.parentElement;
+    if (!parent) return element.tagName.toLowerCase();
+    const children = Array.from(parent.children);
+    const tag = element.tagName.toLowerCase();
+    const childPosition = children.indexOf(element) + 1;
+    const sameTag = children.filter(
+      (candidate) => candidate.tagName === element.tagName,
+    );
+    const typePosition = sameTag.indexOf(element) + 1;
+    const candidates = [
+      `:nth-child(${childPosition})`,
+      `${tag}:nth-of-type(${typePosition})`,
+    ];
+    if (sameTag.length === 1) candidates.push(tag);
+    for (const className of selectorClassTokens(element)) {
+      candidates.push(`.${CSS.escape(className)}`);
+      candidates.push(`${tag}.${CSS.escape(className)}`);
+    }
+    return candidates
+      .filter((selector) => {
+        try {
+          return (
+            element.matches(selector) &&
+            children.filter((candidate) => candidate.matches(selector))
+              .length === 1
+          );
+        } catch {
+          return false;
+        }
+      })
+      .sort((left, right) => left.length - right.length)[0];
+  }
+
+  function selectorFromAnchor(anchor, anchorSelector, element) {
+    if (anchor === element) return anchorSelector;
+    const parts = [];
+    let current = element;
+    while (current && current !== anchor) {
+      parts.unshift(compactChildSegment(current));
+      current = current.parentElement;
+    }
+    if (current !== anchor || !parts.length) return null;
+    return `${anchorSelector} > ${parts.join(" > ")}`;
+  }
+
   function selectorFor(element) {
     if (
       element.id &&
@@ -792,26 +921,36 @@
       const selector = `${tag}[name="${escapedName}"]`;
       if (document.querySelectorAll(selector).length === 1) return selector;
     }
-    const parts = [];
-    let current = element;
-    while (current && current !== document.body) {
-      const currentTag = current.tagName.toLowerCase();
-      const siblings = Array.from(current.parentElement?.children ?? []).filter(
-        (item) => item.tagName === current.tagName,
-      );
-      const position = siblings.indexOf(current) + 1;
-      parts.unshift(`${currentTag}:nth-of-type(${position})`);
-      current = current.parentElement;
-      if (parts.join(" > ").length > 450) break;
+    let anchor = element;
+    while (anchor && anchor !== document.body) {
+      const anchorSelector = uniqueSimpleSelector(anchor);
+      if (anchorSelector) {
+        const selector = selectorFromAnchor(
+          anchor,
+          anchorSelector,
+          element,
+        );
+        if (selector && selector.length <= 500) {
+          const matches = document.querySelectorAll(selector);
+          if (matches.length === 1 && matches[0] === element) {
+            return selector;
+          }
+        }
+      }
+      anchor = anchor.parentElement;
     }
-    const selector = `body > ${parts.join(" > ")}`;
-    if (
-      selector.length > 500 ||
-      document.querySelectorAll(selector).length !== 1
-    ) {
-      throw new Error("无法为当前表单字段生成稳定定位器。");
+    const bodySelector = selectorFromAnchor(
+      document.body,
+      "body",
+      element,
+    );
+    if (bodySelector && bodySelector.length <= 500) {
+      const matches = document.querySelectorAll(bodySelector);
+      if (matches.length === 1 && matches[0] === element) {
+        return bodySelector;
+      }
     }
-    return selector;
+    throw new Error("无法为当前表单字段生成稳定定位器。");
   }
 
   function isRendered(element) {
@@ -1077,6 +1216,7 @@
       score:
         (focused ? 1_000_000 : 0) +
         (modal ? 100_000 : 0) +
+        (kind === "page" ? 10_000 : 0) +
         controls.length,
     };
   }
@@ -1108,6 +1248,55 @@
     return null;
   }
 
+  function looksLikeFullPageFormContainer(element) {
+    if (
+      element === document.body ||
+      element.matches("form") ||
+      element.closest("form") ||
+      element.matches(MODAL_SELECTOR) ||
+      element.closest(MODAL_SELECTOR)
+    ) {
+      return false;
+    }
+    const semanticHint = text(
+      [
+        element.id,
+        element.className,
+        element.getAttribute("role"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("data-testid"),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    if (
+      element.getAttribute("role") !== "form" &&
+      !/(?:^|[-_\s])(?:application|apply|candidate|registration|resume|profile)?[-_\s]?form(?:$|[-_\s])/i.test(
+        semanticHint,
+      )
+    ) {
+      return false;
+    }
+    const controls = editableControls(element);
+    if (controls.length < 4) return false;
+    const labeledCount = controls.filter(
+      (control) => labelsFor(control).length > 0,
+    ).length;
+    if (labeledCount < Math.min(3, controls.length)) return false;
+    const hasApplicationAction = Array.from(
+      element.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], [role="button"]',
+      ),
+    ).some(
+      (candidate) =>
+        isRendered(candidate) &&
+        /(?:保存|提交|完成|下一步|继续|报名|申请|save|submit|next|continue|apply)/i.test(
+          text(candidate.textContent || candidate.getAttribute("value") || ""),
+        ),
+    );
+    return hasApplicationAction;
+  }
+
   function chooseStepRoot() {
     const formCandidates = Array.from(document.forms)
       .map((form) => rootCandidate(form, "form"))
@@ -1121,7 +1310,22 @@
     const dialogCandidates = Array.from(dialogRoots)
       .map((root) => rootCandidate(root, "dialog"))
       .filter(Boolean);
-    const candidates = [...formCandidates, ...dialogCandidates]
+    const pageCandidates = Array.from(
+      document.querySelectorAll(
+        '[role="form"], [id*="form" i], [class*="form" i], [data-testid*="form" i]',
+      ),
+    )
+      .filter(
+        (root) =>
+          isRendered(root) && looksLikeFullPageFormContainer(root),
+      )
+      .map((root) => rootCandidate(root, "page"))
+      .filter(Boolean);
+    const candidates = [
+      ...formCandidates,
+      ...dialogCandidates,
+      ...pageCandidates,
+    ]
       .filter(Boolean)
       .sort((left, right) => right.score - left.score);
     if (!candidates.length) {
