@@ -880,6 +880,16 @@ async function discoverCurrentStep(tab) {
     )
     .sort((left, right) => right.result.score - left.result.score);
   if (!candidates.length) {
+    const failureMessages = [
+      ...new Set(
+        inspections
+          .map((item) => item.result?.message)
+          .filter((value) => typeof value === "string" && value.trim()),
+      ),
+    ];
+    if (failureMessages.length === 1) {
+      throw new Error(failureMessages[0]);
+    }
     throw new Error(
       "当前页面及其同源内嵌区域中没有可识别的报名步骤。请先打开报名弹窗或点击任意待填写字段。",
     );
