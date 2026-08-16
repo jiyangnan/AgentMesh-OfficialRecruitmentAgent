@@ -212,6 +212,76 @@
     )?.label || "";
   }
 
+  function structuralSectionLabels(element) {
+    const labels = [];
+    const sectionPattern =
+      /(?:个人信息|基本信息|求职意向|教育经历|工作经历|实习经历|项目经历|校园经历|在校实践|校内职务|活动实践|语言能力|证书|技能|家庭关系|培训经历|获奖|自我评价)/;
+    const normalizeLabel = (value) => {
+      const label = fieldLabel(value)
+        .replace(/(?:添加|新增|编辑|删除|保存|展开|收起).*$/, "")
+        .trim();
+      return label && label.length <= 80 && sectionPattern.test(label)
+        ? label
+        : "";
+    };
+    const addLabel = (value) => {
+      const label = normalizeLabel(value);
+      if (label) labels.push(label);
+    };
+    let descendant = element;
+    let ancestor = element.parentElement;
+    for (
+      let depth = 0;
+      ancestor && ancestor !== document.body && depth < 20;
+      depth += 1
+    ) {
+      const children = Array.from(ancestor.children);
+      const branchIndex = children.findIndex(
+        (child) => child === descendant || child.contains(descendant),
+      );
+      if (branchIndex > 0) {
+        for (let index = branchIndex - 1; index >= 0; index -= 1) {
+          const candidate = children[index];
+          if (candidate.querySelector("input, select, textarea")) continue;
+          addLabel(candidate.textContent);
+        }
+      }
+      addLabel(ancestor.getAttribute("aria-label"));
+      if (
+        ancestor.matches(
+          ".form-part, .formpart, fieldset, section, [data-ora-section]",
+        )
+      ) {
+        const headings = ancestor.querySelectorAll(
+          ":scope > legend, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, :scope > [role=heading], :scope > .form-part-head, :scope > .form-part-head-new",
+        );
+        for (const heading of headings) {
+          addLabel(heading.textContent);
+        }
+      }
+      descendant = ancestor;
+      ancestor = ancestor.parentElement;
+    }
+    let precedingLabel = "";
+    for (const candidate of document.querySelectorAll(
+      "h1, h2, h3, h4, h5, h6, legend, [role=heading], div, span",
+    )) {
+      if (
+        candidate === element ||
+        candidate.contains(element) ||
+        candidate.querySelector("input, select, textarea") ||
+        !(candidate.compareDocumentPosition(element) &
+          Node.DOCUMENT_POSITION_FOLLOWING)
+      ) {
+        continue;
+      }
+      const label = normalizeLabel(candidate.textContent);
+      if (label) precedingLabel = label;
+    }
+    if (precedingLabel) labels.unshift(precedingLabel);
+    return [...new Set(labels)];
+  }
+
   function labelsFor(element) {
     const labels = [];
     const parent = element.closest("label");
@@ -247,7 +317,12 @@
       }
     }
     const sectionLabel = sectionLabelFor(element);
-    if (sectionLabel) labels.push(sectionLabel);
+    if (sectionLabel) {
+      labels.push(sectionLabel);
+    } else {
+      const structuralSectionLabel = structuralSectionLabels(element)[0];
+      if (structuralSectionLabel) labels.push(structuralSectionLabel);
+    }
     return [...new Set(labels.filter(Boolean))];
   }
 
@@ -386,27 +461,61 @@
     return null;
   }
 
-  async function signature(element) {
-    const metadata = fieldMetadata(element);
+  function signaturePayload(metadata) {
     const payload = {
-        tag: metadata.tag,
-        type: metadata.control_type,
-        id: metadata.field_id,
-        name: metadata.name,
-        labels: metadata.labels,
-        placeholder: metadata.placeholder,
-        autocomplete: metadata.autocomplete,
-        required: metadata.required,
-        disabled: metadata.disabled,
-        readonly: metadata.readonly,
-        constraints: metadata.constraints,
-        options: metadata.options,
+      tag: metadata.tag,
+      type: metadata.control_type,
+      id: metadata.field_id,
+      name: metadata.name,
+      labels: metadata.labels,
+      placeholder: metadata.placeholder,
+      autocomplete: metadata.autocomplete,
+      required: metadata.required,
+      disabled: metadata.disabled,
+      readonly: metadata.readonly,
+      constraints: metadata.constraints,
+      options: metadata.options,
     };
     if (metadata.repeat_group !== undefined) {
       payload.repeat_group = metadata.repeat_group;
       payload.repeat_index = metadata.repeat_index;
     }
-    return sha256(stableStringify(payload));
+    return payload;
+  }
+
+  async function signatureForMetadata(metadata) {
+    return sha256(stableStringify(signaturePayload(metadata)));
+  }
+
+  async function observedFieldRecords(root) {
+    const records = observableControls(root).map((element) => ({
+      element,
+      metadata: fieldMetadata(element),
+      fieldSignature: null,
+    }));
+    const groups = new Map();
+    for (const record of records) {
+      const key = stableStringify(signaturePayload(record.metadata));
+      const group = groups.get(key) || [];
+      group.push(record);
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      group.forEach((record, index) => {
+        record.metadata = {
+          ...record.metadata,
+          labels: [
+            ...record.metadata.labels,
+            `同名字段序号 ${index + 1}/${group.length}`,
+          ],
+        };
+      });
+    }
+    for (const record of records) {
+      record.fieldSignature = await signatureForMetadata(record.metadata);
+    }
+    return records;
   }
 
   function rootSubmission(root) {
@@ -425,10 +534,11 @@
     };
   }
 
-  async function fingerprint(root) {
-    const fields = observableControls(root);
-    const fieldSignatures = [];
-    for (const field of fields) fieldSignatures.push(await signature(field));
+  async function fingerprint(root, records = null) {
+    const observedRecords = records || (await observedFieldRecords(root));
+    const fieldSignatures = observedRecords.map(
+      (record) => record.fieldSignature,
+    );
     const submission = rootSubmission(root);
     return sha256(
       stableStringify({
@@ -818,14 +928,10 @@
   }
 
   async function inspectForm(form) {
-    const fields = observableControls(form);
-    const fieldSignatures = [];
-    for (const field of fields) {
-      fieldSignatures.push(await signature(field));
-    }
+    const records = await observedFieldRecords(form);
     return {
-      form_fingerprint: await fingerprint(form),
-      field_signatures: fieldSignatures,
+      form_fingerprint: await fingerprint(form, records),
+      field_signatures: records.map((record) => record.fieldSignature),
     };
   }
 
@@ -991,12 +1097,32 @@
     ).filter(isRendered);
   }
 
+  function isIdentifiableControl(element) {
+    if (
+      element.id ||
+      element.getAttribute("name") ||
+      element.getAttribute("placeholder") ||
+      element.getAttribute("autocomplete") ||
+      element.getAttribute("aria-label")
+    ) {
+      return true;
+    }
+    if (labelsFor(element).length) return true;
+    const type = (element.getAttribute("type") || "").toLowerCase();
+    return (
+      ["checkbox", "radio"].includes(type) &&
+      optionLabelFor(element) !== "on"
+    );
+  }
+
   function observableControls(root) {
     return Array.from(
       root.querySelectorAll(
         'input:not([type="hidden"]), select, textarea',
       ),
-    ).filter(isRendered);
+    ).filter(
+      (element) => isRendered(element) && isIdentifiableControl(element),
+    );
   }
 
   function repeatGroupSections(root, group) {
@@ -1341,13 +1467,29 @@
   }
 
   async function observeRoot(root) {
-    const elements = observableControls(root);
+    const records = await observedFieldRecords(root);
     const fields = [];
-    for (const element of elements) {
+    const signatures = new Map();
+    for (const record of records) {
+      const { element, fieldSignature, metadata } = record;
+      const selector = selectorFor(element);
+      const existing = signatures.get(fieldSignature);
+      if (existing) {
+        const descriptor =
+          metadata.labels[0] ||
+          metadata.name ||
+          metadata.field_id ||
+          metadata.placeholder ||
+          metadata.control_type;
+        throw new Error(
+          `当前步骤存在无法区分的重复字段：${descriptor}（${existing}、${selector}）。`,
+        );
+      }
+      signatures.set(fieldSignature, selector);
       fields.push({
-        field_signature: await signature(element),
-        selector: selectorFor(element),
-        ...fieldMetadata(element),
+        field_signature: fieldSignature,
+        selector,
+        ...metadata,
       });
     }
     const submission = rootSubmission(root);
@@ -1356,7 +1498,7 @@
       action_url: submission.actionUrl,
       method: submission.method,
       extraction_version: "form-extraction-v1",
-      form_fingerprint: await fingerprint(root),
+      form_fingerprint: await fingerprint(root, records),
       fields,
     };
   }
@@ -1389,24 +1531,6 @@
         message: "当前步骤已经填写，请先撤销本次填写后再重试。",
       };
     }
-    const resolved = [];
-    for (const field of task.plan.fields) {
-      const matches = document.querySelectorAll(field.selector);
-      if (matches.length !== 1) {
-        return {
-          ok: false,
-          message: `字段定位结果不是唯一值：${field.profile_field}`,
-        };
-      }
-      const element = matches[0];
-      if ((await signature(element)) !== field.field_signature) {
-        return {
-          ok: false,
-          message: `字段结构已经变化：${field.profile_field}`,
-        };
-      }
-      resolved.push([field, element]);
-    }
     let candidate;
     try {
       candidate = chooseStepRoot();
@@ -1417,10 +1541,36 @@
           error instanceof Error ? error.message : "无法识别当前报名步骤。",
       };
     }
-    if (resolved.some(([, element]) => !candidate.root.contains(element))) {
-      return { ok: false, message: "目标字段不属于当前报名步骤。" };
+    const observedRecords = await observedFieldRecords(candidate.root);
+    const recordByElement = new Map(
+      observedRecords.map((record) => [record.element, record]),
+    );
+    const resolved = [];
+    for (const field of task.plan.fields) {
+      const matches = document.querySelectorAll(field.selector);
+      if (matches.length !== 1) {
+        return {
+          ok: false,
+          message: `字段定位结果不是唯一值：${field.profile_field}`,
+        };
+      }
+      const element = matches[0];
+      const record = recordByElement.get(element);
+      if (!record) {
+        return { ok: false, message: "目标字段不属于当前报名步骤。" };
+      }
+      if (record.fieldSignature !== field.field_signature) {
+        return {
+          ok: false,
+          message: `字段结构已经变化：${field.profile_field}`,
+        };
+      }
+      resolved.push([field, element]);
     }
-    const pageFingerprint = await fingerprint(candidate.root);
+    const pageFingerprint = await fingerprint(
+      candidate.root,
+      observedRecords,
+    );
     if (pageFingerprint !== task.form_fingerprint) {
       return { ok: false, message: "报名步骤结构已经变化，请重新审阅。" };
     }
