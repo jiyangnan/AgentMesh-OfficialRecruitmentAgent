@@ -273,6 +273,51 @@ export function evidencePayload(result) {
   };
 }
 
+export function validateEvidenceAcknowledgement(
+  taskId,
+  result,
+  serverTask,
+) {
+  const expectedStatus = {
+    fill_previewed: "previewed",
+    fill_executed: "executed_locally",
+    fill_undone: "undone_locally",
+    fill_failed: "failed_locally",
+  }[result?.event_type];
+  if (
+    !expectedStatus ||
+    serverTask?.fill_task_id !== taskId ||
+    serverTask?.status !== expectedStatus
+  ) {
+    throw new Error("工作台没有确认页面执行结果，请重试证据同步。");
+  }
+
+  const expectedEvidence = {
+    event_type: result.event_type,
+    filled_count: result.field_results.filter(
+      (item) => item.status === "filled",
+    ).length,
+    preserved_count: result.field_results.filter(
+      (item) =>
+        item.status === "skipped" &&
+        item.reason_code === "already_has_value",
+    ).length,
+    blocked_count: result.field_results.filter((item) =>
+      ["missing", "blocked", "fingerprint_mismatch"].includes(item.status),
+    ).length,
+  };
+  const acknowledgedEvidence = serverTask.plan?.last_local_evidence;
+  if (
+    !acknowledgedEvidence ||
+    Object.entries(expectedEvidence).some(
+      ([key, value]) => acknowledgedEvidence[key] !== value,
+    )
+  ) {
+    throw new Error("工作台确认的执行证据计数不一致，请重试同步。");
+  }
+  return serverTask;
+}
+
 export async function evidenceIdempotencyKey(
   taskId,
   result,
