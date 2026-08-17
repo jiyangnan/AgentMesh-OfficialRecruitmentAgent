@@ -474,6 +474,12 @@
     ) {
       return "generic_switch";
     }
+    if (
+      element.classList.contains("phoenix-select__input") &&
+      element.closest(".phoenix-select")
+    ) {
+      return "phoenix_select";
+    }
     if (!element.hasAttribute("readonly")) return null;
     const handler = element.getAttribute("onclick") || "";
     if (/\bselectGraduateSchool\s*\(/.test(handler)) {
@@ -742,6 +748,19 @@
       }
       return members.length > 0;
     }
+    if (
+      original.interaction_kind === "phoenix_select" &&
+      !text(original.value)
+    ) {
+      const root = element.closest(".phoenix-select");
+      const clear = root?.querySelector(
+        ".phoenix-select__clearIcon--show, .phoenix-select__clearIcon",
+      );
+      if (clear instanceof HTMLElement) {
+        clear.click();
+        return true;
+      }
+    }
     nativeSet(element, "value", original.value);
     if (original.title === null) {
       element.removeAttribute("title");
@@ -935,7 +954,113 @@
     return { ok: true, reasonCode: null };
   }
 
+  async function fillPhoenixSelect(element, field) {
+    const root = element.closest(".phoenix-select");
+    if (!(root instanceof HTMLElement)) {
+      return { ok: false, reasonCode: "phoenix_root_not_found" };
+    }
+    root.click();
+    const monthMatch = String(field.value).match(
+      /^(\d{4})-(0[1-9]|1[0-2])$/,
+    );
+    if (monthMatch) {
+      const calendar = await waitForValue(
+        () => visibleElement(".phoenix-calendar-month-calendar"),
+        1200,
+      );
+      if (!calendar) {
+        return { ok: false, reasonCode: "phoenix_calendar_not_opened" };
+      }
+      const yearLabel = calendar.querySelector(
+        ".phoenix-calendar-month-panel-year-select-content",
+      );
+      const previous = calendar.querySelector(
+        ".phoenix-calendar-month-panel-prev-year-btn",
+      );
+      const next = calendar.querySelector(
+        ".phoenix-calendar-month-panel-next-year-btn",
+      );
+      const targetYear = Number(monthMatch[1]);
+      const readYear = () => {
+        const match = text(yearLabel?.textContent).match(/\d{4}/);
+        return match ? Number(match[0]) : Number.NaN;
+      };
+      let currentYear = readYear();
+      if (
+        !Number.isInteger(currentYear) ||
+        !(previous instanceof HTMLElement) ||
+        !(next instanceof HTMLElement)
+      ) {
+        return { ok: false, reasonCode: "phoenix_year_control_not_found" };
+      }
+      let navigationCount = 0;
+      while (currentYear !== targetYear && navigationCount < 150) {
+        const before = currentYear;
+        (currentYear > targetYear ? previous : next).click();
+        const changedYear = await waitForValue(() => {
+          const candidate = readYear();
+          return Number.isInteger(candidate) && candidate !== before
+            ? candidate
+            : null;
+        }, 800);
+        if (!changedYear) {
+          return { ok: false, reasonCode: "phoenix_year_navigation_failed" };
+        }
+        currentYear = changedYear;
+        navigationCount += 1;
+      }
+      if (currentYear !== targetYear) {
+        return { ok: false, reasonCode: "phoenix_year_out_of_range" };
+      }
+      const targetMonth = `${Number(monthMatch[2])}月`;
+      const month = Array.from(
+        calendar.querySelectorAll(".phoenix-calendar-month-panel-month"),
+      ).find(
+        (candidate) =>
+          isRendered(candidate) && sameText(candidate.textContent, targetMonth),
+      );
+      if (!(month instanceof HTMLElement)) {
+        return { ok: false, reasonCode: "phoenix_month_not_found" };
+      }
+      month.click();
+      return { ok: true, reasonCode: null };
+    }
+    const expected = [field.value, field.display_value]
+      .map((value) => text(String(value || "")))
+      .filter(Boolean);
+    const option = await waitForValue(
+      () =>
+        Array.from(
+          document.querySelectorAll(
+            "li.phoenix-selectList__listItem, " +
+              ".phoenix-selectList__listItem [title]",
+          ),
+        ).find((candidate) => {
+          if (!isRendered(candidate)) return false;
+          const values = [
+            candidate.getAttribute("data-value"),
+            candidate.getAttribute("value"),
+            candidate.getAttribute("title"),
+            candidate.getAttribute("aria-label"),
+            candidate.textContent,
+          ].map((value) => text(value || ""));
+          return expected.some((target) =>
+            values.some((candidateValue) => sameText(candidateValue, target)),
+          );
+        }) || null,
+      1200,
+    );
+    if (!(option instanceof HTMLElement)) {
+      return { ok: false, reasonCode: "phoenix_option_not_found" };
+    }
+    option.click();
+    return { ok: true, reasonCode: null };
+  }
+
   async function fillSupportedInteraction(element, field) {
+    if (field.interaction_kind === "phoenix_select") {
+      return fillPhoenixSelect(element, field);
+    }
     if (field.interaction_kind === "hotjob_school_picker") {
       return fillHotjobSchoolPicker(element, field.value);
     }
@@ -1770,6 +1895,7 @@
         title: element.getAttribute("title"),
         checked: Boolean(element.checked),
         field_signature: field.field_signature,
+        interaction_kind: field.interaction_kind || null,
         related: relatedOriginals(element, field.interaction_kind),
         radioGroup:
           element instanceof HTMLInputElement &&

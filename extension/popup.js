@@ -1246,9 +1246,9 @@ function renderAcknowledgedExecution(result) {
     currentTask?.plan?.profile_questions?.length ?? 0;
   const manualRequiredCount = manualRequiredItems(currentTask).length;
   setConnection(
-    profileQuestionCount || unresolvedCount
+    profileQuestionCount
       ? "第 {step} 步待补档案"
-      : manualRequiredCount
+      : manualRequiredCount || unresolvedCount
         ? "第 {step} 步需手动处理"
       : "第 {step} 步已填写",
     { step: currentTask?.plan?.step_index ?? 1 },
