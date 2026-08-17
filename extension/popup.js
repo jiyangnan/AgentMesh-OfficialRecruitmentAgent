@@ -739,9 +739,15 @@ function restoreTaskUi(task) {
   renderTask(task);
   if (task.status === "executed_locally") {
     const questionCount = task.plan?.profile_questions?.length ?? 0;
-    setConnection(questionCount ? "第 {step} 步待补档案" : "第 {step} 步已填写", {
-      step: task.plan.step_index ?? 1,
-    });
+    const manualCount = manualRequiredItems(task).length;
+    setConnection(
+      questionCount
+        ? "第 {step} 步待补档案"
+        : manualCount
+          ? "第 {step} 步需手动处理"
+          : "第 {step} 步已填写",
+      { step: task.plan.step_index ?? 1 },
+    );
     const filledCount = task.plan?.last_local_evidence?.filled_count;
     undoButton.disabled =
       currentFrameId === null || filledCount === 0;
@@ -750,6 +756,10 @@ function restoreTaskUi(task) {
         ? t("已有信息已经填写，但本步骤仍有 {count} 个档案问题。请回到本机 Agent 集中回答；在新档案确认并重新识别前，不要进入网站下一步。", {
             count: questionCount,
           })
+        : manualCount
+          ? t("已有信息已经填写，但本步骤仍有 {count} 个必填附件。请在原网页手动上传，上传后重新识别当前步骤。", {
+              count: manualCount,
+            })
         : currentFrameId === null
         ? "请重新识别当前步骤后再撤销填写。"
         : filledCount === 0
@@ -768,12 +778,17 @@ function restoreTaskUi(task) {
       step: task.plan.step_index ?? 1,
     });
     const questionCount = task.plan?.profile_questions?.length ?? 0;
+    const manualCount = manualRequiredItems(task).length;
     showMessage(
       questionCount
         ? t("本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。", {
             count: questionCount,
           })
-        : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
+        : manualCount
+          ? t("本步骤有 {count} 个必填附件，请在原网页手动上传；上传后重新识别当前步骤。", {
+              count: manualCount,
+            })
+          : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
     );
     return;
   }
@@ -807,6 +822,12 @@ function pendingRepeatGroups(task) {
   return (task.plan?.repeat_groups || []).filter(
     (item) => Number(item.pending_count) > 0,
   );
+}
+
+function manualRequiredItems(task) {
+  return Array.isArray(task?.plan?.manual_required)
+    ? task.plan.manual_required
+    : [];
 }
 
 async function observeTask(sessionTask, observation) {
@@ -874,12 +895,20 @@ taskForm.addEventListener("submit", async (event) => {
         currentTask.status = "previewed";
       }
       if (currentTask.status === "executed_locally") {
-        setConnection("第 {step} 步已填写", {
+        const manualCount = manualRequiredItems(currentTask).length;
+        setConnection(
+          manualCount ? "第 {step} 步需手动处理" : "第 {step} 步已填写",
+          {
           step: currentTask.plan.step_index ?? 1,
-        });
+          },
+        );
         undoButton.disabled = false;
         showMessage(
-          "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。",
+          manualCount
+            ? t("已有信息已经填写，但本步骤仍有 {count} 个必填附件。请在原网页手动上传，上传后重新识别当前步骤。", {
+                count: manualCount,
+              })
+            : "当前步骤已经填写。核对后手动点击网站的下一步，再重新打开扩展。",
         );
       } else {
         setConnection("第 {step} 步待确认", {
@@ -888,6 +917,7 @@ taskForm.addEventListener("submit", async (event) => {
         offerReviewApproval(currentTask);
         const questionCount =
           currentTask.plan.profile_questions?.length ?? 0;
+        const manualCount = manualRequiredItems(currentTask).length;
         const pendingGroups = pendingRepeatGroups(currentTask);
         if (pendingGroups.length) {
           const pendingCount = pendingGroups.reduce(
@@ -908,7 +938,13 @@ taskForm.addEventListener("submit", async (event) => {
                 })
               : t("可先填写已有信息；本步骤另有 {count} 个档案问题。请在工作台补充并交给本机 Agent，在确认前不要进入网站下一步。", {
                   count: questionCount,
-                }),
+              }),
+          );
+        } else if (manualCount) {
+          showMessage(
+            t("本步骤另有 {count} 个必填附件，请在原网页手动上传；填写已有信息后仍需重新识别确认。", {
+              count: manualCount,
+            }),
           );
         }
       }
@@ -918,12 +954,17 @@ taskForm.addEventListener("submit", async (event) => {
       });
       const questionCount =
         currentTask.plan.profile_questions?.length ?? 0;
+      const manualCount = manualRequiredItems(currentTask).length;
       showMessage(
         questionCount
           ? t("本步骤尚未完成：发现 {count} 个档案缺口。请回到本机 Agent 集中回答，确认新档案后再次识别当前步骤。", {
               count: questionCount,
             })
-          : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
+          : manualCount
+            ? t("本步骤有 {count} 个必填附件，请在原网页手动上传；上传后重新识别当前步骤。", {
+                count: manualCount,
+              })
+            : "当前步骤没有可安全自动填写的字段。手动完成后进入下一步，再重新打开扩展。",
       );
     }
   } catch (error) {
@@ -1065,6 +1106,7 @@ function renderTask(task) {
     task.plan.fields.map((field) => [field.field_signature, field]),
   );
   const reviewedFields = task.plan.review_fields ?? [];
+  const manualRequired = manualRequiredItems(task);
   const displayFields = reviewedFields.length
     ? reviewedFields.map((field) => ({
         ...field,
@@ -1078,14 +1120,14 @@ function renderTask(task) {
   );
   fieldCount.textContent = t("可填 {fillable} / {total}{pending}", {
     fillable: task.plan.fields.length,
-    total: displayFields.length,
+    total: displayFields.length + manualRequired.length,
     pending: pendingRecordCount
       ? t(" · 待新增 {count} 条", { count: pendingRecordCount })
       : "",
   });
   renderGateSummary(task.plan.gate_summary ?? []);
   renderProfileGap(task);
-  fieldCount.title = t("本次可自动填写字段数 / 当前页面识别字段总数");
+  fieldCount.title = t("本次可自动填写字段数 / 当前步骤需处理字段总数");
   executeButton.textContent = repeatGroups.length
     ? t("建立缺少的记录")
     : t("确认填写");
@@ -1119,6 +1161,7 @@ function renderTask(task) {
       manual: [t("此字段保留手动处理"), t("手动")],
       unmapped: [t("尚未建立可靠字段映射"), t("未识别")],
       review: [t("需要核对后再处理"), t("待核对")],
+      confirmation_required: [t("需要本人明确确认"), t("待确认")],
     };
     const [reasonText, valueText] = statusCopy[action] ?? [
       t("需要人工处理"),
@@ -1143,7 +1186,21 @@ function renderTask(task) {
     row.append(label, value);
     return row;
   });
-  const rows = [...repeatRows, ...fieldRows];
+  const manualRows = manualRequired.map((field) => {
+    const row = document.createElement("div");
+    row.className = "field-row field-row--manual_required";
+    const label = document.createElement("span");
+    const name = document.createElement("strong");
+    const reason = document.createElement("small");
+    const value = document.createElement("code");
+    name.textContent = field.site_label || t("必填附件");
+    reason.textContent = t("附件不会由 Agent 读取或上传");
+    value.textContent = t(field.instruction || "请在原网页手动上传");
+    label.append(name, reason);
+    row.append(label, value);
+    return row;
+  });
+  const rows = [...repeatRows, ...fieldRows, ...manualRows];
   if (!rows.length) {
     const row = document.createElement("div");
     row.className = "field-row";
@@ -1187,9 +1244,12 @@ function renderAcknowledgedExecution(result) {
   }
   const profileQuestionCount =
     currentTask?.plan?.profile_questions?.length ?? 0;
+  const manualRequiredCount = manualRequiredItems(currentTask).length;
   setConnection(
     profileQuestionCount || unresolvedCount
       ? "第 {step} 步待补档案"
+      : manualRequiredCount
+        ? "第 {step} 步需手动处理"
       : "第 {step} 步已填写",
     { step: currentTask?.plan?.step_index ?? 1 },
   );
@@ -1214,6 +1274,11 @@ function renderAcknowledgedExecution(result) {
           summary: fillSummary,
           count: profileQuestionCount,
         })
+      : manualRequiredCount
+        ? t("{summary}本步骤尚未完成：还有 {count} 个必填附件。请在原网页手动上传，上传后重新识别当前步骤。", {
+            summary: fillSummary,
+            count: manualRequiredCount,
+          })
       : unresolvedCount
         ? t("{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。", {
             summary: fillSummary,

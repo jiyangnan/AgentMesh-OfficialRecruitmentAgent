@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.4
+version: 0.3.5
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -119,8 +119,9 @@ After a confirmed profile exists:
 6. The extension previews mappings before filling reversible ordinary fields.
 7. After every inspection or fill, run `ora-workbench profile-questions`
    before reporting the current step complete or directing the user onward.
-8. The user handles files, declarations, CAPTCHA, next-step navigation and
-   final submission.
+8. The user handles files, CAPTCHA, next-step navigation and final submission.
+   A required declaration may be filled only after the user explicitly confirms
+   it for the current application; never infer or default that confirmation.
 9. The extension writes bounded evidence back to the same application shown in
    Web.
 
@@ -144,35 +145,45 @@ ready, first complete the agreed extension inspection and then run the gate.
   does not expose it.
 - Never say that the step is complete and never direct the user to the site's
   next step while the gate is blocking.
+- Only fields visibly marked required in the current step may create this gate.
+  Optional fields must never be presented as profile gaps or reasons to block.
+- If `manual_required` contains a required attachment, tell the user to upload
+  it on the original website. Never turn it into a profile question, ask for a
+  path, choose a file, or upload it. Inspect the same step again afterward.
 - Only continue the ordinary handoff after the command returns
   `agent_gate.blocking: false`.
 
 ### Complete Unknown Recruitment Fields
 
-Do not stop merely because the extension filled the fields already present in
-the confirmed profile. When the extension reports profile gaps:
+Do not stop merely because the extension filled the required fields already
+present in the confirmed profile. When the extension reports required profile
+gaps:
 
 1. Run `ora-workbench profile-questions` immediately. Use
    `--fill-task-id <id>` when the extension or user provides a task ID.
 2. Present every returned question in one compact batch. Do not interrupt the
    user once per field and do not invent missing answers.
-3. Exclude files, CAPTCHA, declarations, search/filter controls, next-step
+3. Exclude optional fields, files, CAPTCHA, search/filter controls, next-step
    actions and submission from profile completion even if the website uses
-   unusual wording.
-4. Choose the narrowest truthful scope for each answer:
+   unusual wording. A required legal, privacy or truthfulness declaration is
+   the exception: present its explicit-confirmation choice and proceed only
+   after the user personally selects it.
+4. Keep fields from one repeated business record in one structured entity card
+   instead of asking unrelated flat questions.
+5. Choose the narrowest truthful scope for each answer:
    - `account` for a stable personal fact reusable everywhere;
    - `site` for one recruitment website's wording or option format;
    - `application` for a position-specific preference or one-time answer.
-5. Make sure `ora-workbench profile-handoff start` reports ready, then open the
+6. Make sure `ora-workbench profile-handoff start` reports ready, then open the
    matching missing-information card in the Web workbench. The user may fill
    the card there; its browser draft stays local and submission goes directly
    to this local handoff, not to the product answer API.
-6. The Web workbench must show the complete local pending proposal. Do not
+7. The Web workbench must show the complete local pending proposal. Do not
    claim the values are saved until the user confirms “确认并保存到本机”.
-7. After the user confirms locally, tell them to return to the same recruitment page
+8. After the user confirms locally, tell them to return to the same recruitment page
    and choose “识别当前步骤” again. Do not ask them to refresh, re-login or
    navigate away.
-8. The extension must fill only controls that are still empty. Existing site
+9. The extension must fill only controls that are still empty. Existing site
    values and user edits stay unchanged; the user reviews everything and keeps
    control of save, next and submit.
 

@@ -203,7 +203,32 @@
     }
     const structuralHeading = structuralFieldHeading(element);
     if (structuralHeading) candidates.push(structuralHeading);
-    return candidates.some((candidate) => /[*＊]/.test(candidate || ""));
+    const fieldContainer = element.closest(
+      ".ant-form-item, .el-form-item, .arco-form-item, .ivu-form-item, " +
+        ".form-item, .formItem, [data-form-item], [data-field], [role=group]",
+    );
+    if (fieldContainer) {
+      if (
+        fieldContainer.getAttribute("aria-required") === "true" ||
+        /(?:^|\s)(?:is-)?required(?:\s|$)/i.test(fieldContainer.className || "")
+      ) {
+        return true;
+      }
+      fieldContainer
+        .querySelectorAll(
+          "label, legend, [class*=label], [class*=title], [role=heading]",
+        )
+        .forEach((candidate) => {
+          if (!candidate.querySelector("input, select, textarea")) {
+            candidates.push(candidate.textContent);
+          }
+        });
+    }
+    return candidates.some((candidate) =>
+      /[*＊]|(?:^|[（(\s])必填(?:[）)\s]|$)|\brequired\b/i.test(
+        candidate || "",
+      ),
+    );
   }
 
   function sectionLabelFor(element) {
@@ -376,12 +401,6 @@
         .filter(Boolean)
         .join(" "),
     );
-    if (
-      element.type === "checkbox" &&
-      (!accessibleContext || element.required)
-    ) {
-      return true;
-    }
     return /(?:我|本人)(?:已)?(?:同意|声明|承诺|保证|知悉|阅读|授权|遵守|无异议)|确认(?:上述|以上|所填|所述|信息(?:真实|无误)|内容|声明|资料|报名|申请)|(?:隐私政策|用户协议|服务协议|报名须知|申请须知|诚信承诺)|\b(?:agree(?:d|ment)?|declaration|attest(?:ation)?|consent|terms?)\b/i.test(
       context,
     );
@@ -422,6 +441,7 @@
             ]
           : [];
     const repeatContext = repeatContextFor(element);
+    const interactionKind = interactionKindFor(element);
     return {
       tag,
       control_type: type,
@@ -433,19 +453,28 @@
       required: hasRequiredMarker(element),
       disabled: element.hasAttribute("disabled"),
       readonly: element.hasAttribute("readonly"),
+      manual_satisfied:
+        type === "file" && element instanceof HTMLInputElement
+          ? Boolean(element.files?.length)
+          : false,
       constraints,
       options,
+      ...(interactionKind ? { interaction_kind: interactionKind } : {}),
       ...(repeatContext || {}),
     };
   }
 
   function interactionKindFor(element) {
-    if (
-      !(element instanceof HTMLInputElement) ||
-      !element.hasAttribute("readonly")
-    ) {
+    if (!(element instanceof HTMLInputElement)) {
       return null;
     }
+    if (
+      ["checkbox", "radio"].includes(element.type) &&
+      element.getAttribute("role") === "switch"
+    ) {
+      return "generic_switch";
+    }
+    if (!element.hasAttribute("readonly")) return null;
     const handler = element.getAttribute("onclick") || "";
     if (/\bselectGraduateSchool\s*\(/.test(handler)) {
       return "hotjob_school_picker";
@@ -457,6 +486,22 @@
       return /dateFmt\s*:\s*['"]yyyy-MM['"]/.test(handler)
         ? "hotjob_month_picker"
         : "hotjob_date_picker";
+    }
+    if (
+      element.getAttribute("role") === "combobox" ||
+      ["listbox", "tree", "menu"].includes(
+        element.getAttribute("aria-haspopup") || "",
+      )
+    ) {
+      return "generic_combobox";
+    }
+    if (
+      element.getAttribute("aria-haspopup") === "dialog" ||
+      /date|time|calendar|picker/i.test(
+        `${element.className} ${element.getAttribute("data-testid") || ""}`,
+      )
+    ) {
+      return "generic_value_control";
     }
     return null;
   }
@@ -656,7 +701,9 @@
       const selected = element.selectedOptions[0];
       return (
         sameText(element.value, field.value) ||
-        sameText(selected?.textContent, field.value)
+        sameText(selected?.textContent, field.value) ||
+        (Boolean(field.display_value) &&
+          sameText(selected?.textContent, field.display_value))
       );
     }
     if (
@@ -671,7 +718,11 @@
     ) {
       return element.checked && sameText(element.value, field.value);
     }
-    return sameText(element.value, field.value);
+    return (
+      sameText(element.value, field.value) ||
+      (Boolean(field.display_value) &&
+        sameText(element.value, field.display_value))
+    );
   }
 
   function restoreOriginal(element, original) {
@@ -907,6 +958,50 @@
       dispatchValueEvents(element);
       return { ok: true, reasonCode: null };
     }
+    if (field.interaction_kind === "generic_combobox") {
+      element.click();
+      const expected = [field.value, field.display_value]
+        .map((value) => text(String(value || "")))
+        .filter(Boolean);
+      const option = await waitForValue(
+        () =>
+          Array.from(
+            document.querySelectorAll(
+              '[role="option"], .ant-select-item-option, ' +
+                ".el-select-dropdown__item, .ant-cascader-menu-item, " +
+                ".el-cascader-node, [data-value]",
+            ),
+          ).find((candidate) => {
+            if (!isRendered(candidate)) return false;
+            const values = [
+              candidate.getAttribute("data-value"),
+              candidate.getAttribute("value"),
+              candidate.getAttribute("title"),
+              candidate.getAttribute("aria-label"),
+              candidate.textContent,
+            ].map((value) => text(value || ""));
+            return expected.some((target) =>
+              values.some((candidateValue) => sameText(candidateValue, target)),
+            );
+          }) || null,
+        1200,
+      );
+      if (!option) {
+        return { ok: false, reasonCode: "combobox_option_not_found" };
+      }
+      option.click();
+      return { ok: true, reasonCode: null };
+    }
+    if (field.interaction_kind === "generic_value_control") {
+      nativeSet(element, "value", field.value);
+      dispatchValueEvents(element);
+      return { ok: true, reasonCode: null };
+    }
+    if (field.interaction_kind === "generic_switch") {
+      nativeSet(element, "checked", expectedChecked(field.value));
+      dispatchValueEvents(element);
+      return { ok: true, reasonCode: null };
+    }
     return { ok: false, reasonCode: "unsupported_interaction" };
   }
 
@@ -1120,9 +1215,23 @@
       root.querySelectorAll(
         'input:not([type="hidden"]), select, textarea',
       ),
-    ).filter(
-      (element) => isRendered(element) && isIdentifiableControl(element),
-    );
+    ).filter((element) => {
+      const visibleRequiredFile =
+        element instanceof HTMLInputElement &&
+        element.type === "file" &&
+        hasRequiredMarker(element) &&
+        Boolean(
+          Array.from(element.parentElement?.children || []).some(
+            (candidate) => candidate !== element && isRendered(candidate),
+          ) ||
+            (element.closest("label") &&
+              isRendered(element.closest("label"))),
+        );
+      return (
+        (isRendered(element) || visibleRequiredFile) &&
+        isIdentifiableControl(element)
+      );
+    });
   }
 
   function repeatGroupSections(root, group) {
@@ -1604,7 +1713,10 @@
       }
     }
     for (const [field, element] of resolved) {
-      if (isDeclarationControl(element)) {
+      if (
+        isDeclarationControl(element) &&
+        field.explicit_confirmation !== true
+      ) {
         results.push({
           field_signature: field.field_signature,
           status: "blocked",

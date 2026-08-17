@@ -865,6 +865,11 @@ def _resolved_binding_fields(
                 "source": "local_confirmed_profile_fact",
                 "question_id": question.get("question_id"),
                 **(
+                    {"explicit_confirmation": True}
+                    if question.get("kind") == "explicit_confirmation"
+                    else {}
+                ),
+                **(
                     {"interaction_kind": binding["interaction_kind"]}
                     if binding.get("interaction_kind")
                     else {}
