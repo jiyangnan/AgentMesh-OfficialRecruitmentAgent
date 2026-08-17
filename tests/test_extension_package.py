@@ -52,6 +52,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
         payload = b"\n".join(archive.read(name) for name in names)
         popup_html = archive.read("popup.html").decode("utf-8")
         popup_js = archive.read("popup.js").decode("utf-8")
+        protocol_js = archive.read("protocol.js").decode("utf-8")
     assert {
         "manifest.json",
         "popup.html",
@@ -85,6 +86,10 @@ def test_extension_package_is_installable_and_contains_no_secret(
     assert 'type="password"' not in popup_html
     assert "currentApiKey" not in popup_js
     assert "normalizeApiKey" not in popup_js
+    assert 'id="profile-gap"' in popup_html
+    assert 'id="complete-profile"' in popup_html
+    assert "ora_pending_execution_evidence_v1" in popup_js
+    assert "validateEvidenceAcknowledgement" in protocol_js
     assert "agentmesh-installation.json" not in names
     assert b"ORA_EXTENSION_SIGNING_SECRET" not in payload
     assert b"X-Service-Token" not in payload

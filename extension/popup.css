@@ -267,6 +267,35 @@ button:disabled {
   color: #8f2424;
 }
 
+.profile-gap {
+  margin-top: 10px;
+  padding: 10px;
+  color: #6b5410;
+  background: #fdf6e3;
+  border: 1px solid #e6c96a;
+  border-radius: 6px;
+}
+
+.profile-gap strong {
+  display: block;
+  font-size: 11px;
+}
+
+.profile-gap p {
+  margin: 5px 0 9px;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.profile-gap button {
+  width: 100%;
+  min-height: 32px;
+  color: #6b5410;
+  border-color: #d3b54f;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .field-list {
   max-height: 190px;
   margin-top: 12px;

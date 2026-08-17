@@ -5,6 +5,7 @@ import {
   mergeLocalProfileResolution,
   normalizeServerUrl,
   observationIdempotencyKey,
+  validateEvidenceAcknowledgement,
   validateFillSession,
   validateFillTask,
 } from "./protocol.js";
@@ -15,6 +16,7 @@ await initializeI18n();
 const CONNECTION_STORAGE_KEY = "ora_connection_v1";
 const INSTALLATION_STORAGE_KEY = "ora_installation_id_v1";
 const ACTIVE_SESSION_STORAGE_KEY = "ora_active_assist_session_v1";
+const PENDING_EVIDENCE_STORAGE_KEY = "ora_pending_execution_evidence_v1";
 const AUTO_CONNECT_DISABLED_STORAGE_KEY =
   "ora_local_auto_connect_disabled_v1";
 const LOCAL_AGENT_URL = "http://127.0.0.1:8765";
@@ -35,6 +37,10 @@ const targetOrigin = document.querySelector("#target-origin");
 const stepLabel = document.querySelector("#step-label");
 const fieldCount = document.querySelector("#field-count");
 const gateSummaryBox = document.querySelector("#gate-summary");
+const profileGap = document.querySelector("#profile-gap");
+const profileGapTitle = document.querySelector("#profile-gap-title");
+const profileGapCopy = document.querySelector("#profile-gap-copy");
+const completeProfileButton = document.querySelector("#complete-profile");
 const fieldList = document.querySelector("#field-list");
 const reviewApproval = document.querySelector("#review-approved");
 const executeButton = document.querySelector("#execute");
@@ -53,11 +59,76 @@ let currentCapability = null;
 let currentFrameId = null;
 let refreshFromTaskId = null;
 let localProfileResolutionError = null;
+let pendingExecutionEvidence = null;
 
 function showMessage(text, error = false) {
   message.hidden = false;
   message.textContent = localizeMessage(text);
   message.classList.toggle("error", error);
+}
+
+async function persistPendingExecutionEvidence(task, result, taskVersion) {
+  pendingExecutionEvidence = {
+    server_url: currentServer,
+    fill_task_id: task.fill_task_id,
+    task_version: taskVersion,
+    allowed_origin: task.allowed_origin,
+    expires_at: task.expires_at,
+    evidence: evidencePayload(result),
+  };
+  try {
+    await chrome.storage.session.set({
+      [PENDING_EVIDENCE_STORAGE_KEY]: pendingExecutionEvidence,
+    });
+  } catch {
+    // Keep the in-memory retry path available for this popup session.
+  }
+}
+
+async function clearPendingExecutionEvidence() {
+  pendingExecutionEvidence = null;
+  try {
+    await chrome.storage.session.remove(PENDING_EVIDENCE_STORAGE_KEY);
+  } catch {
+    // The server acknowledgement remains authoritative.
+  }
+}
+
+async function restorePendingExecutionEvidence(task) {
+  const stored = await chrome.storage.session.get(
+    PENDING_EVIDENCE_STORAGE_KEY,
+  );
+  const candidate = stored[PENDING_EVIDENCE_STORAGE_KEY];
+  const matches =
+    candidate?.server_url === currentServer &&
+    candidate?.fill_task_id === task.fill_task_id &&
+    candidate?.allowed_origin === task.allowed_origin &&
+    new Date(candidate?.expires_at ?? 0).getTime() > Date.now() &&
+    ["fill_executed", "fill_failed"].includes(
+      candidate?.evidence?.event_type,
+    );
+  if (
+    !matches ||
+    ["executed_locally", "failed_locally"].includes(task.status)
+  ) {
+    if (candidate) await clearPendingExecutionEvidence();
+    return false;
+  }
+  pendingExecutionEvidence = candidate;
+  showPendingEvidenceSync();
+  return true;
+}
+
+function showPendingEvidenceSync() {
+  resetReviewApproval();
+  undoButton.disabled = true;
+  executeButton.disabled = false;
+  executeButton.textContent = t("重试同步");
+  setConnection("页面已填写，证据待同步");
+  showMessage(
+    "页面已经执行，但工作台尚未确认收到执行证据。请不要再次填写，直接选择“重试同步”。",
+    true,
+  );
 }
 
 function setConnection(source, values = {}) {
@@ -127,6 +198,32 @@ function workbenchUrl(serverUrl) {
   if (locale() !== "zh-CN") url.searchParams.set("lang", locale());
   url.hash = "";
   return url.toString();
+}
+
+async function openWorkbench() {
+  if (!currentServer) return;
+  try {
+    await chrome.tabs.create({ url: workbenchUrl(currentServer) });
+  } catch {
+    showMessage("工作台暂时无法打开，请稍后重试。", true);
+  }
+}
+
+function renderProfileGap(task) {
+  if (!profileGap || !profileGapTitle || !profileGapCopy) return;
+  const questionCount = task.plan?.profile_questions?.length ?? 0;
+  profileGap.hidden = questionCount === 0;
+  if (!questionCount) {
+    profileGapTitle.textContent = "";
+    profileGapCopy.textContent = "";
+    return;
+  }
+  profileGapTitle.textContent = t("发现 {count} 个待补资料", {
+    count: questionCount,
+  });
+  profileGapCopy.textContent = t(
+    "请在工作台回答这些问题并交给本机 Agent 保存，然后回到当前页面重新识别。",
+  );
 }
 
 function isLocalDevelopmentServer(value) {
@@ -697,6 +794,7 @@ async function restorePopupState() {
       : null;
     if (task?.plan?.fields) {
       restoreTaskUi(task);
+      await restorePendingExecutionEvidence(task);
     } else if (refreshFromTaskId) {
       showMessage("个人档案已有更新。选择“识别当前步骤”即可在当前页面补填空字段。");
     }
@@ -986,6 +1084,7 @@ function renderTask(task) {
       : "",
   });
   renderGateSummary(task.plan.gate_summary ?? []);
+  renderProfileGap(task);
   fieldCount.title = t("本次可自动填写字段数 / 当前页面识别字段总数");
   executeButton.textContent = repeatGroups.length
     ? t("建立缺少的记录")
@@ -1062,6 +1161,90 @@ async function injectExecutor(tabId, target) {
   });
 }
 
+function renderAcknowledgedExecution(result) {
+  const filledCount = result.field_results.filter(
+    (item) => item.status === "filled",
+  ).length;
+  const preservedCount = result.field_results.filter(
+    (item) =>
+      item.status === "skipped" &&
+      item.reason_code === "already_has_value",
+  ).length;
+  const unresolvedCount = result.field_results.filter((item) =>
+    ["missing", "blocked", "fingerprint_mismatch"].includes(item.status),
+  ).length;
+  undoButton.disabled = filledCount === 0;
+  if (result.event_type === "fill_failed") {
+    setConnection("填写未完成");
+    showMessage(
+      t("没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。", {
+        preserved: preservedCount,
+        unresolved: unresolvedCount,
+      }),
+      true,
+    );
+    return;
+  }
+  const profileQuestionCount =
+    currentTask?.plan?.profile_questions?.length ?? 0;
+  setConnection(
+    profileQuestionCount || unresolvedCount
+      ? "第 {step} 步待补档案"
+      : "第 {step} 步已填写",
+    { step: currentTask?.plan?.step_index ?? 1 },
+  );
+  const preservedSummary = preservedCount
+    ? t("；保留 {count} 个已有字段", { count: preservedCount })
+    : "";
+  const unresolvedSummary = unresolvedCount
+    ? t("；{count} 个字段未可靠写入", { count: unresolvedCount })
+    : "";
+  const fillSummary = filledCount
+    ? t("已填写 {count} 个空字段{preserved}{unresolved}。", {
+        count: filledCount,
+        preserved: preservedSummary,
+        unresolved: unresolvedSummary,
+      })
+    : t("当前步骤没有新的空字段需要填写{preserved}。", {
+        preserved: preservedSummary,
+      });
+  showMessage(
+    profileQuestionCount
+      ? t("{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。", {
+          summary: fillSummary,
+          count: profileQuestionCount,
+        })
+      : unresolvedCount
+        ? t("{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。", {
+            summary: fillSummary,
+          })
+        : t("{summary}证据已同步到 Web，核对后请手动进入下一步。", {
+            summary: fillSummary,
+          }),
+    unresolvedCount > 0,
+  );
+}
+
+async function retryPendingEvidenceSync() {
+  if (!pendingExecutionEvidence || !currentTask) return;
+  executeButton.disabled = true;
+  setConnection("正在重试证据同步");
+  try {
+    await sendEvidence(
+      pendingExecutionEvidence.fill_task_id,
+      pendingExecutionEvidence.evidence,
+      pendingExecutionEvidence.task_version,
+    );
+    const result = pendingExecutionEvidence.evidence;
+    await clearPendingExecutionEvidence();
+    resetReviewApproval();
+    executeButton.textContent = t("确认填写");
+    renderAcknowledgedExecution(result);
+  } catch {
+    showPendingEvidenceSync();
+  }
+}
+
 executeButton.addEventListener("click", async () => {
   if (
     !currentTask ||
@@ -1069,6 +1252,10 @@ executeButton.addEventListener("click", async () => {
     !currentServer ||
     currentFrameId === null
   ) {
+    return;
+  }
+  if (pendingExecutionEvidence) {
+    await retryPendingEvidenceSync();
     return;
   }
   if (!currentReviewApproved()) {
@@ -1165,74 +1352,32 @@ executeButton.addEventListener("click", async () => {
     });
     const result = execution.result;
     if (!result?.ok) throw new Error(result?.message ?? "页面填写失败。");
-    await sendEvidence(currentTask.fill_task_id, result);
-    const filledCount = result.field_results.filter(
-      (item) => item.status === "filled",
-    ).length;
-    const preservedCount = result.field_results.filter(
-      (item) =>
-        item.status === "skipped" &&
-        item.reason_code === "already_has_value",
-    ).length;
-    const unresolvedCount = result.field_results.filter((item) =>
-      ["missing", "blocked", "fingerprint_mismatch"].includes(
-        item.status,
-      ),
-    ).length;
-    undoButton.disabled = filledCount === 0;
-    executionCompleted = true;
-    if (result.event_type === "fill_failed") {
-      setConnection("填写未完成");
-      showMessage(
-        t("没有字段通过页面回读验证；保留 {preserved} 个已有字段，另有 {unresolved} 个字段未可靠写入。请重新识别当前步骤或手动处理。", {
-          preserved: preservedCount,
-          unresolved: unresolvedCount,
-        }),
-        true,
+    const taskVersion = currentTask.version;
+    await persistPendingExecutionEvidence(
+      currentTask,
+      result,
+      taskVersion,
+    );
+    try {
+      await sendEvidence(
+        currentTask.fill_task_id,
+        result,
+        taskVersion,
       );
+    } catch {
+      showPendingEvidenceSync();
       return;
     }
-    const profileQuestionCount =
-      currentTask.plan.profile_questions?.length ?? 0;
-    setConnection(
-      profileQuestionCount || unresolvedCount
-        ? "第 {step} 步待补档案"
-        : "第 {step} 步已填写",
-      { step: currentTask.plan.step_index ?? 1 },
-    );
-    const preservedSummary = preservedCount
-      ? t("；保留 {count} 个已有字段", { count: preservedCount })
-      : "";
-    const unresolvedSummary = unresolvedCount
-      ? t("；{count} 个字段未可靠写入", { count: unresolvedCount })
-      : "";
-    const fillSummary = filledCount
-      ? t("已填写 {count} 个空字段{preserved}{unresolved}。", {
-          count: filledCount,
-          preserved: preservedSummary,
-          unresolved: unresolvedSummary,
-        })
-      : t("当前步骤没有新的空字段需要填写{preserved}。", {
-          preserved: preservedSummary,
-        });
-    showMessage(profileQuestionCount
-      ? t("{summary}本步骤尚未完成：还有 {count} 个档案问题。请回到本机 Agent 集中回答；确认新档案并重新识别前，不要进入网站下一步。", {
-          summary: fillSummary,
-          count: profileQuestionCount,
-        })
-      : unresolvedCount
-        ? t("{summary}请逐项核对并手动处理未写入字段；完成前不要进入网站下一步。", {
-            summary: fillSummary,
-          })
-        : t("{summary}证据已同步到 Web，核对后请手动进入下一步。", {
-            summary: fillSummary,
-          }),
-    unresolvedCount > 0);
+    await clearPendingExecutionEvidence();
+    executionCompleted = true;
+    renderAcknowledgedExecution(result);
   } catch (error) {
     setConnection("填写未完成");
     showMessage(error instanceof Error ? error.message : "填写失败。", true);
   } finally {
-    if (
+    if (pendingExecutionEvidence) {
+      showPendingEvidenceSync();
+    } else if (
       !executionCompleted &&
       currentTask &&
       ["ready", "previewed"].includes(currentTask.status)
@@ -1282,11 +1427,15 @@ undoButton.addEventListener("click", async () => {
   }
 });
 
-async function sendEvidence(taskId, result) {
+async function sendEvidence(
+  taskId,
+  result,
+  taskVersion = currentTask?.version ?? null,
+) {
   const idempotencyKey = await evidenceIdempotencyKey(
     taskId,
     result,
-    currentTask?.version ?? null,
+    taskVersion,
   );
   const response = await fetch(
     `${currentServer}/api/v1/fill-tasks/${taskId}/evidence`,
@@ -1309,27 +1458,28 @@ async function sendEvidence(taskId, result) {
         "证据回传失败。",
     );
   }
-  const serverTask = payload?.result?.fill_task;
+  const serverTask = validateEvidenceAcknowledgement(
+    taskId,
+    result,
+    payload?.result?.fill_task,
+  );
   if (
     currentTask &&
-    serverTask?.fill_task_id === currentTask.fill_task_id
+    serverTask.fill_task_id === currentTask.fill_task_id
   ) {
     currentTask.status = serverTask.status;
     currentTask.version = serverTask.version;
+    currentTask.plan.last_local_evidence =
+      serverTask.plan.last_local_evidence;
   }
+  return serverTask;
 }
 
 reviewApproval.addEventListener("change", () => {
   executeButton.disabled = !currentReviewApproved();
 });
 
-openWorkbenchButton.addEventListener("click", async () => {
-  if (!currentServer) return;
-  try {
-    await chrome.tabs.create({ url: workbenchUrl(currentServer) });
-  } catch {
-    showMessage("工作台暂时无法打开，请稍后重试。", true);
-  }
-});
+openWorkbenchButton.addEventListener("click", openWorkbench);
+completeProfileButton?.addEventListener("click", openWorkbench);
 
 void restorePopupState();
