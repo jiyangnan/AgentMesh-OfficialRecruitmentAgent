@@ -218,8 +218,10 @@ button:disabled {
 
 .field-row--missing > code,
 .field-row--manual > code,
+.field-row--manual_required > code,
 .field-row--unmapped > code,
-.field-row--review > code {
+.field-row--review > code,
+.field-row--confirmation_required > code {
   color: #986514;
 }
 

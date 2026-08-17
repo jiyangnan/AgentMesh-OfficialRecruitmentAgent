@@ -179,6 +179,8 @@ export function mergeLocalProfileResolution(task, resolution) {
           question_id: question.question_id,
           selector: binding.selector,
           control_type: binding.control_type,
+          explicit_confirmation:
+            question.kind === "explicit_confirmation",
         });
       }
     });
@@ -193,6 +195,8 @@ export function mergeLocalProfileResolution(task, resolution) {
       field.selector !== binding.selector ||
       field.control_type !== binding.control_type ||
       field.source !== "local_confirmed_profile_fact" ||
+      Boolean(field.explicit_confirmation) !==
+        Boolean(binding.explicit_confirmation) ||
       typeof field.value !== "string" ||
       field.value.length > 4000
     ) {
@@ -216,6 +220,9 @@ export function mergeLocalProfileResolution(task, resolution) {
           reason: local.reason,
           value: local.value,
           display_value: local.display_value,
+          ...(local.explicit_confirmation
+            ? { explicit_confirmation: true }
+            : {}),
         }
       : field;
   });
