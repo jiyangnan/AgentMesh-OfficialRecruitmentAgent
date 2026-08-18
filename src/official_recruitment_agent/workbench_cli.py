@@ -41,6 +41,7 @@ from official_recruitment_agent.workbench.profile_dimensions import (
     profile_dimension_catalog,
 )
 from official_recruitment_agent.local_profile_handoff import (
+    LOCAL_HANDOFF_CAPABILITIES,
     LOCAL_HANDOFF_URL,
     LocalHandoffError,
     LocalHandoffService,
@@ -1129,6 +1130,27 @@ def _profile_handoff_status(
     return _query_local_handoff(args, workspace_ref)
 
 
+def _local_handoff_is_compatible(
+    status: dict[str, Any],
+    *,
+    expected_installation_id: str | None,
+) -> bool:
+    installation_matches = (
+        expected_installation_id is None
+        or status.get("extension_installation_id")
+        == expected_installation_id
+    )
+    capabilities = status.get("capabilities")
+    capability_set = (
+        {item for item in capabilities if isinstance(item, str)}
+        if isinstance(capabilities, list)
+        else set()
+    )
+    return installation_matches and set(
+        LOCAL_HANDOFF_CAPABILITIES
+    ).issubset(capability_set)
+
+
 def _start_profile_handoff(
     args: argparse.Namespace,
     *,
@@ -1144,10 +1166,9 @@ def _start_profile_handoff(
         current = _query_local_handoff(args, workspace_ref)
     except (HTTPError, URLError, OSError, ValueError):
         current = None
-    if current is not None and (
-        expected_installation_id is None
-        or current.get("extension_installation_id")
-        == expected_installation_id
+    if current is not None and _local_handoff_is_compatible(
+        current,
+        expected_installation_id=expected_installation_id,
     ):
         return {**current, "started": False, "already_running": True}
     if current is not None:
@@ -1193,6 +1214,11 @@ def _start_profile_handoff(
         time.sleep(0.1)
         try:
             status = _query_local_handoff(args, workspace_ref)
+            if not _local_handoff_is_compatible(
+                status,
+                expected_installation_id=expected_installation_id,
+            ):
+                continue
             return {
                 **status,
                 "started": True,

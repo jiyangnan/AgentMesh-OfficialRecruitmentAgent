@@ -801,6 +801,8 @@ def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
             "status": "ready",
             "workspace_match": True,
             "answer_residency": "local_device",
+            "capabilities": ["resolved-required-answers-v1"],
+            "extension_installation_id": f"orainstall_{'a' * 32}",
         }
 
     class FakeProcess:
@@ -907,6 +909,7 @@ def test_local_handoff_child_starts_without_key_and_scrubs_parent_key(
         return {
             "status": "ready",
             "extension_installation_id": f"orainstall_{'a' * 32}",
+            "capabilities": ["resolved-required-answers-v1"],
         }
 
     class FakeProcess:
@@ -977,6 +980,7 @@ def test_extension_update_restarts_outdated_local_handoff(
             "workspace_match": True,
             "extension_connection_supported": True,
             "extension_installation_id": installation_id,
+            "capabilities": ["resolved-required-answers-v1"],
         }
 
     monkeypatch.setattr(cli_module, "_query_local_handoff", fake_query)
@@ -1018,6 +1022,83 @@ def test_extension_update_restarts_outdated_local_handoff(
 
     assert result["started"] is True
     assert result["extension_installation_id"] == installation_id
+    assert calls == {"query": 2, "stop": 1, "spawn": 1}
+
+
+def test_client_update_restarts_same_extension_identity_without_capability(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace_ref = _test_workspace_ref("c")
+    installation_id = f"orainstall_{'a' * 32}"
+    calls = {"query": 0, "stop": 0, "spawn": 0}
+
+    monkeypatch.setattr(
+        cli_module,
+        "_product_and_workspace",
+        lambda _args: (object(), workspace_ref),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ensure_extension_pairing",
+        lambda _root: {"installation_id": installation_id},
+    )
+
+    def fake_query(_args, _workspace_ref):
+        calls["query"] += 1
+        if calls["query"] == 1:
+            return {
+                "status": "ready",
+                "workspace_match": True,
+                "extension_connection_supported": True,
+                "extension_installation_id": installation_id,
+            }
+        return {
+            "status": "ready",
+            "workspace_match": True,
+            "extension_connection_supported": True,
+            "extension_installation_id": installation_id,
+            "capabilities": ["resolved-required-answers-v1"],
+        }
+
+    monkeypatch.setattr(cli_module, "_query_local_handoff", fake_query)
+    monkeypatch.setattr(
+        cli_module,
+        "_stop_outdated_local_handoff",
+        lambda: calls.__setitem__("stop", calls["stop"] + 1),
+    )
+
+    class FakeProcess:
+        pid = 54322
+
+        @staticmethod
+        def poll():
+            return None
+
+    def fake_popen(*_args, **_kwargs):
+        calls["spawn"] += 1
+        return FakeProcess()
+
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        cli_module,
+        "_config_path",
+        lambda: tmp_path / "official-recruitment.json",
+    )
+    args = cli_module.argparse.Namespace(
+        base_url="https://recruit.agentmesh360.com",
+        api_key="agentmesh_live_test-key",
+        account="acct-test",
+        actor="agent-test",
+    )
+
+    result = cli_module._start_profile_handoff(args)
+
+    assert result["started"] is True
+    assert result["capabilities"] == [
+        "resolved-required-answers-v1"
+    ]
     assert calls == {"query": 2, "stop": 1, "spawn": 1}
 
 
