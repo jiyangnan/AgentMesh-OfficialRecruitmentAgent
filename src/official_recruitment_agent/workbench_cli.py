@@ -37,6 +37,9 @@ from official_recruitment_agent.workbench.profile_contract import (
     PROFILE_SCHEMA_VERSION,
     normalize_profile_fields,
 )
+from official_recruitment_agent.workbench.profile_dimensions import (
+    profile_dimension_catalog,
+)
 from official_recruitment_agent.local_profile_handoff import (
     LOCAL_HANDOFF_URL,
     LocalHandoffError,
@@ -418,6 +421,10 @@ def build_parser() -> argparse.ArgumentParser:
     extension_host_commands.add_parser("install")
     extension_host_commands.add_parser("status")
     subparsers.add_parser("profile-schema")
+    subparsers.add_parser(
+        "profile-foundation",
+        help="查看初始建档完整度与待补维度，不读取本机答案值",
+    )
     handoff = subparsers.add_parser("profile-handoff")
     handoff_commands = handoff.add_subparsers(
         dest="profile_handoff_command",
@@ -604,6 +611,12 @@ def main(argv: list[str] | None = None) -> int:
                 ]
         elif args.command == "profile-schema":
             result = _profile_schema()
+        elif args.command == "profile-foundation":
+            result = _request(
+                args,
+                "GET",
+                "/api/v1/agent/profile-foundation",
+            )
         elif args.command == "profile-handoff":
             if args.profile_handoff_command == "serve":
                 service = _local_handoff_service(args)
@@ -819,23 +832,37 @@ def _profile_schema() -> dict[str, Any]:
             "实习、工作、项目、校内职务和活动必须保留在 experience_records，并用 kind 区分。",
             "同类经历有多条但无法确认主记录时，不设置 is_primary，不擅自选择第一条。",
             "证书、技能和语言的日期、熟练度、分数或等级应进入对应 records，不要压成无法拆分的文本。",
+            "简历导入确认后读取 profile-foundation；把用户引导到工作台一次性补充高频缺失资料，不在聊天里索取敏感答案。",
         ],
+        "foundation_catalog": profile_dimension_catalog(),
         "fields": {
             "identity": [
                 "full_name",
+                "english_name",
                 "gender",
                 "birth_date",
+                "nationality",
                 "phone",
                 "email",
+                "wechat",
                 "id_number",
                 "political_status",
                 "ethnicity",
+                "marital_status",
                 "id_type",
                 "household_registration",
                 "native_place",
+                "current_residence",
+                "current_address",
+                "postal_code",
                 "second_major",
                 "personal_strengths",
                 "height_cm",
+            ],
+            "education_summary": [
+                "student_id",
+                "gpa",
+                "class_rank",
             ],
             "education_records": {
                 "required": ["school_name"],
@@ -890,10 +917,18 @@ def _profile_schema() -> dict[str, Any]:
                 "target_roles",
                 "preferred_locations",
                 "expected_salary",
+                "available_start_date",
+                "work_authorization",
+                "willingness_to_relocate",
                 "skills",
                 "certificates",
                 "awards",
                 "language_skills",
+            ],
+            "emergency_contact": [
+                "emergency_contact_name",
+                "emergency_contact_relationship",
+                "emergency_contact_phone",
             ],
             "supplemental_facts": {
                 "description": (

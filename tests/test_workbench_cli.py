@@ -403,7 +403,56 @@ def test_profile_schema_describes_resume_extraction_contract(capsys) -> None:
         "site",
         "application",
     ]
+    assert payload["foundation_catalog"]["initial_dimension_count"] >= 30
+    assert any(
+        item["key"] == "id_number"
+        and item["privacy"] == "sensitive"
+        for item in payload["foundation_catalog"]["dimensions"]
+    )
     assert any("不上传原始文件" in item for item in payload["instructions"])
+
+
+def test_profile_foundation_reads_metadata_without_answer_submission(
+    monkeypatch,
+    capsys,
+) -> None:
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _Response(
+            {
+                "contract_version": "profile-foundation-v1",
+                "catalog_version": "official-profile-dimensions-v1",
+                "profile_version_id": "profile_0123456789abcdef01234567",
+                "missing_count": 2,
+                "questions": [
+                    {
+                        "question_id": "pq_" + "a" * 24,
+                        "site_label": "证件号码",
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(cli_module, "open_without_redirect", fake_urlopen)
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.example",
+            "--api-key",
+            "agentmesh_live_test-key",
+            "profile-foundation",
+        ]
+    )
+
+    assert code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["missing_count"] == 2
+    request, _ = requests[0]
+    assert request.method == "GET"
+    assert request.full_url.endswith("/api/v1/agent/profile-foundation")
+    assert request.data is None
 
 
 def test_cli_help_identifies_adapter_instead_of_installed_agent(capsys) -> None:

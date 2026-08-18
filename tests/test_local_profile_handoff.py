@@ -688,9 +688,68 @@ def test_resolution_status_never_returns_private_values(tmp_path: Path) -> None:
         origin="https://recruit.agentmesh360.com",
     )
 
+    assert status["contract_version"] == "local-profile-resolution-v1"
     assert status["resolved_question_ids"] == [QUESTION_ID]
     assert SENTINEL not in json.dumps(status, ensure_ascii=False)
     assert "fields" not in status
+    assert "context_kind" not in status
+    assert "context_id" not in status
+
+
+def test_profile_foundation_fact_is_saved_locally_and_marks_metadata_resolved(
+    tmp_path: Path,
+) -> None:
+    resolved = _resolved()
+    resolved.update(
+        {
+            "context_kind": "profile_foundation",
+            "context_id": "profile_foundation_0123456789abcdef01234567",
+            "fill_task_id": "profile_foundation_0123456789abcdef01234567",
+            "profile_version_id": "profile_0123456789abcdef01234567",
+            "application_id": None,
+            "site_domain": "个人档案",
+        }
+    )
+    resolved["questions"] = [
+        {
+            "question_id": QUESTION_ID,
+            "kind": "foundation_missing",
+            "site_label": "籍贯 / 生源地",
+            "canonical_field": "native_place",
+            "suggested_profile_key": "native_place",
+            "recommended_scope": "account",
+            "privacy": "sensitive",
+            "required": False,
+            "aliases": ["籍贯", "生源地"],
+            "bindings": [],
+        }
+    ]
+    product = FakeProductClient(resolved)
+    service = LocalHandoffService(
+        store=LocalProfileStore(tmp_path / "private-profile.sqlite3"),
+        product=product,  # type: ignore[arg-type]
+        configured_workspace_ref=WORKSPACE_REF,
+    )
+
+    proposal = service.submit(
+        handoff_token="orahandoff_foundation-token",
+        answers=[{"question_id": QUESTION_ID, "value": SENTINEL}],
+        origin="https://recruit.agentmesh360.com",
+    )
+    service.store.confirm_proposal(
+        proposal["proposal_id"],
+        proposal["proposal_capability"],
+    )
+    status = service.resolution_status(
+        handoff_token="orahandoff_foundation-status-token",
+        origin="https://recruit.agentmesh360.com",
+    )
+
+    assert status["contract_version"] == "local-profile-resolution-v2"
+    assert status["context_kind"] == "profile_foundation"
+    assert status["context_id"] == resolved["context_id"]
+    assert status["resolved_question_ids"] == [QUESTION_ID]
+    assert SENTINEL not in json.dumps(status, ensure_ascii=False)
 
 
 def test_handoff_is_origin_bound_and_replay_is_idempotent(
