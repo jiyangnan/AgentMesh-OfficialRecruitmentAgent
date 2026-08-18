@@ -6,6 +6,7 @@ import os
 import sqlite3
 import stat
 import threading
+from copy import deepcopy
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -385,6 +386,8 @@ def test_status_uses_startup_workspace_without_cloud_request(
 
     assert ready["status"] == "ready"
     assert ready["workspace_match"] is True
+    assert ready["client_version"]
+    assert ready["capabilities"] == ["resolved-required-answers-v1"]
     assert mismatch["status"] == "workspace_mismatch"
     assert mismatch["workspace_match"] is False
     assert product.calls == []
@@ -442,6 +445,94 @@ def test_private_answer_stays_local_and_extension_receives_confirmed_value(
             "question_id": QUESTION_ID,
         }
     ]
+
+
+def test_handoff_only_requires_answers_not_already_confirmed_locally(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+    first = service.submit(
+        handoff_token="orahandoff-existing-required-answer",
+        answers=[{"question_id": QUESTION_ID, "value": SENTINEL}],
+        origin="https://recruit.agentmesh360.com",
+    )
+    service.store.confirm_proposal(
+        first["proposal_id"],
+        first["proposal_capability"],
+    )
+
+    unresolved_question_id = "pq_bbbbbbbbbbbbbbbbbbbbbbbb"
+    current = deepcopy(_resolved())
+    current["handoff_jti"] = "handoff-jti-only-unresolved-required"
+    current["questions"].append(
+        {
+            "question_id": unresolved_question_id,
+            "site_label": "当前居住地",
+            "canonical_field": "current_residence",
+            "suggested_profile_key": "current_residence",
+            "recommended_scope": "account",
+            "privacy": "standard",
+            "required": True,
+            "aliases": ["当前居住地"],
+            "bindings": [
+                {
+                    "field_signature": "b" * 64,
+                    "selector": "#current-residence",
+                    "control_type": "text",
+                    "options": [],
+                }
+            ],
+        }
+    )
+    product.resolved = current
+
+    proposal = service.submit(
+        handoff_token="orahandoff-only-unresolved-required",
+        answers=[
+            {
+                "question_id": unresolved_question_id,
+                "value": "示例城市",
+            }
+        ],
+        origin="https://recruit.agentmesh360.com",
+    )
+
+    assert proposal["status"] == "pending"
+    assert [item["question_id"] for item in proposal["items"]] == [
+        unresolved_question_id
+    ]
+
+
+def test_handoff_still_rejects_required_answer_missing_locally_and_in_request(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+    unresolved_question_id = "pq_bbbbbbbbbbbbbbbbbbbbbbbb"
+    current = deepcopy(_resolved())
+    current["handoff_jti"] = "handoff-jti-missing-required"
+    current["questions"].append(
+        {
+            "question_id": unresolved_question_id,
+            "site_label": "当前居住地",
+            "canonical_field": "current_residence",
+            "suggested_profile_key": "current_residence",
+            "recommended_scope": "account",
+            "privacy": "standard",
+            "required": True,
+            "aliases": ["当前居住地"],
+            "bindings": [],
+        }
+    )
+    product.resolved = current
+
+    with pytest.raises(LocalHandoffError) as captured:
+        service.submit(
+            handoff_token="orahandoff-missing-required",
+            answers=[{"question_id": QUESTION_ID, "value": SENTINEL}],
+            origin="https://recruit.agentmesh360.com",
+        )
+
+    assert captured.value.code == "required_profile_answer_missing"
 
 
 @pytest.mark.parametrize(

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -32,6 +33,9 @@ LOCAL_HANDOFF_URL = f"http://{LOCAL_HANDOFF_HOST}:{LOCAL_HANDOFF_PORT}"
 MAX_REQUEST_BYTES = 256 * 1024
 PROPOSAL_TTL_SECONDS = 15 * 60
 LOCAL_EXTENSION_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+LOCAL_HANDOFF_CAPABILITIES = (
+    "resolved-required-answers-v1",
+)
 ALLOWED_WEB_ORIGINS = frozenset(
     {
         "https://recruit.agentmesh360.com",
@@ -105,6 +109,13 @@ class _RejectRedirects(HTTPRedirectHandler):
 def open_without_redirect(request: Request, *, timeout: float):
     """Open one exact URL; never forward credentials through a redirect."""
     return build_opener(_RejectRedirects()).open(request, timeout=timeout)
+
+
+def _installed_client_version() -> str:
+    try:
+        return version("official-recruitment-agent")
+    except PackageNotFoundError:
+        return "development"
 
 
 def default_local_profile_path(
@@ -426,7 +437,14 @@ class LocalProfileStore:
         resolved: dict[str, Any],
         answers: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        normalized = _normalize_answers(resolved, answers)
+        local_resolution = self.resolution_for(resolved)
+        normalized = _normalize_answers(
+            resolved,
+            answers,
+            already_resolved_question_ids=set(
+                local_resolution["resolved_question_ids"]
+            ),
+        )
         handoff_jti = str(resolved["handoff_jti"])
         with self._connect() as connection:
             existing = connection.execute(
@@ -760,6 +778,8 @@ class LocalProfileStore:
 def _normalize_answers(
     resolved: dict[str, Any],
     answers: list[dict[str, Any]],
+    *,
+    already_resolved_question_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     questions = {
         item["question_id"]: item
@@ -786,7 +806,10 @@ def _normalize_answers(
         for question_id, question in questions.items()
         if question.get("required") is True
     }
-    if not required_ids.issubset(set(answer_ids)):
+    satisfied_ids = set(answer_ids) | (
+        already_resolved_question_ids or set()
+    )
+    if not required_ids.issubset(satisfied_ids):
         raise LocalHandoffError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "required_profile_answer_missing",
@@ -1079,6 +1102,8 @@ class LocalHandoffService:
     def status(self, workspace_ref: str) -> dict[str, Any]:
         return {
             "contract_version": "local-profile-handoff-v1",
+            "client_version": _installed_client_version(),
+            "capabilities": list(LOCAL_HANDOFF_CAPABILITIES),
             "status": (
                 "ready"
                 if self.configured_workspace_ref == workspace_ref
