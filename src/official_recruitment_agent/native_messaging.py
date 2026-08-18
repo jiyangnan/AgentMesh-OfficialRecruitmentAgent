@@ -39,7 +39,7 @@ def native_host_executable() -> Path:
     )
     if script_candidate.is_file():
         return script_candidate
-    return Path(sys.executable).resolve().parent / f"ora-native-host{suffix}"
+    return Path(sys.executable).parent / f"ora-native-host{suffix}"
 
 
 def native_host_manifest_path(
@@ -244,7 +244,7 @@ def _write_message(stream: BinaryIO, value: dict[str, Any]) -> None:
 
 def _cli_executable() -> Path:
     suffix = ".exe" if sys.platform == "win32" else ""
-    return Path(sys.executable).resolve().parent / f"ora-workbench{suffix}"
+    return Path(sys.executable).parent / f"ora-workbench{suffix}"
 
 
 def _start_local_agent(

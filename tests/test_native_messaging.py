@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import struct
+import sys
 
 import pytest
 
@@ -222,3 +223,25 @@ def test_native_bridge_connects_without_returning_pairing_secret(
         "installation_id": pairing["installation_id"],
         "pairing_secret": pairing["pairing_secret"],
     }
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX virtual environments expose the Python launcher by symlink",
+)
+def test_native_bridge_locates_cli_beside_virtualenv_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_python = tmp_path / "python-base" / "python"
+    base_python.parent.mkdir()
+    base_python.write_text("", encoding="utf-8")
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_python = venv_bin / "python"
+    venv_python.symlink_to(base_python)
+    cli = venv_bin / "ora-workbench"
+    cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(native_module.sys, "executable", str(venv_python))
+
+    assert native_module._cli_executable() == cli

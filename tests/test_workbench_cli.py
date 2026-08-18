@@ -764,6 +764,11 @@ def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
         }
 
     monkeypatch.setattr(cli_module, "_start_profile_handoff", fake_start)
+    monkeypatch.setattr(
+        cli_module,
+        "native_messaging_host_status",
+        lambda: {"status": "ready", "ready": True},
+    )
 
     code = cli_module.main(
         [
@@ -779,6 +784,61 @@ def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ready"
     assert payload["answer_residency"] == "local_device"
+    assert payload["native_host"]["ready"] is True
+
+
+def test_profile_handoff_start_repairs_stale_native_host_registration(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    calls = []
+    extension_root = tmp_path / "extension"
+    monkeypatch.setattr(
+        cli_module,
+        "default_extension_root",
+        lambda: extension_root,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "native_messaging_host_status",
+        lambda: {"status": "repair_required", "ready": False},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "install_native_messaging_host",
+        lambda *, extension_root: (
+            calls.append(extension_root)
+            or {"status": "ready", "ready": True}
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_start_profile_handoff",
+        lambda _args: {
+            "status": "ready",
+            "workspace_match": True,
+            "answer_residency": "local_device",
+            "started": False,
+        },
+    )
+
+    code = cli_module.main(
+        [
+            "--api-key",
+            "agentmesh_live_test-key",
+            "profile-handoff",
+            "start",
+        ]
+    )
+
+    assert code == 0
+    assert calls == [extension_root]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["native_host"] == {
+        "status": "ready",
+        "ready": True,
+    }
 
 
 def test_handoff_start_validates_cloud_once_then_polls_only_loopback(

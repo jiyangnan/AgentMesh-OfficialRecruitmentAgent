@@ -643,11 +643,12 @@ def main(argv: list[str] | None = None) -> int:
                         pid_path.unlink()
                     except FileNotFoundError:
                         pass
-            result = (
-                _start_profile_handoff(args)
-                if args.profile_handoff_command == "start"
-                else _profile_handoff_status(args)
-            )
+            if args.profile_handoff_command == "start":
+                native_host = _ensure_native_messaging_host_ready()
+                result = _start_profile_handoff(args)
+                result["native_host"] = native_host
+            else:
+                result = _profile_handoff_status(args)
         elif args.command == "summary":
             result = _request(args, "GET", "/api/v1/workbench/summary")
         elif args.command == "list":
@@ -773,6 +774,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
+
+
+def _ensure_native_messaging_host_ready() -> dict[str, Any]:
+    current = native_messaging_host_status()
+    if current.get("ready") is True:
+        return current
+    return install_native_messaging_host(
+        extension_root=default_extension_root(),
+    )
 
 
 def _configure(args: argparse.Namespace) -> dict[str, Any]:
