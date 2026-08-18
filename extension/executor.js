@@ -175,12 +175,18 @@
       return true;
     }
     const candidates = [];
+    const candidateElements = [];
+    const addCandidateElement = (candidate) => {
+      if (!(candidate instanceof Element)) return;
+      candidateElements.push(candidate);
+      candidates.push(candidate.textContent);
+    };
     const parent = element.closest("label");
-    if (parent) candidates.push(parent.textContent);
+    if (parent) addCandidateElement(parent);
     if (element.id) {
       document
         .querySelectorAll(`label[for="${CSS.escape(element.id)}"]`)
-        .forEach((label) => candidates.push(label.textContent));
+        .forEach(addCandidateElement);
     }
     const cell = element.closest("td, th");
     const row = cell?.parentElement;
@@ -197,7 +203,7 @@
         ) {
           break;
         }
-        candidates.push(candidate.textContent);
+        addCandidateElement(candidate);
         break;
       }
     }
@@ -208,6 +214,13 @@
         ".form-item, .formItem, [data-form-item], [data-field], [role=group]",
     );
     if (fieldContainer) {
+      candidateElements.push(fieldContainer);
+      const explicitRequiredMarker = fieldContainer.querySelector(
+        ".form-item__required, .icon-cus-bitian",
+      );
+      if (explicitRequiredMarker) {
+        return true;
+      }
       if (
         fieldContainer.getAttribute("aria-required") === "true" ||
         /(?:^|\s)(?:is-)?required(?:\s|$)/i.test(fieldContainer.className || "")
@@ -220,14 +233,40 @@
         )
         .forEach((candidate) => {
           if (!candidate.querySelector("input, select, textarea")) {
-            candidates.push(candidate.textContent);
+            addCandidateElement(candidate);
           }
         });
     }
-    return candidates.some((candidate) =>
-      /[*＊]|(?:^|[（(\s])必填(?:[）)\s]|$)|\brequired\b/i.test(
-        candidate || "",
-      ),
+    const requiredMarkerPattern =
+      /[*＊]|(?:^|[（(\s])必填(?:[）)\s]|$)|\brequired\b/i;
+    const hasPseudoElementMarker = candidateElements.some((candidate) => {
+      if (!isRendered(candidate)) return false;
+      return ["::before", "::after"].some((pseudoElement) => {
+        let style;
+        try {
+          style = globalThis.getComputedStyle?.(candidate, pseudoElement);
+        } catch {
+          return false;
+        }
+        if (
+          !style ||
+          style.display === "none" ||
+          style.visibility === "hidden"
+        ) {
+          return false;
+        }
+        const content = style.content || "";
+        return (
+          !["", "none", "normal"].includes(content) &&
+          requiredMarkerPattern.test(content)
+        );
+      });
+    });
+    return (
+      hasPseudoElementMarker ||
+      candidates.some((candidate) =>
+        requiredMarkerPattern.test(candidate || ""),
+      )
     );
   }
 
@@ -372,11 +411,58 @@
     return parts.join(" ") || element.getAttribute("value") || "on";
   }
 
+  function isPhoenixRadioGroup(element) {
+    return (
+      element instanceof HTMLElement &&
+      element.classList.contains("phoenix-radio-group") &&
+      Boolean(element.querySelector(".phoenix-radio-group__radioItem"))
+    );
+  }
+
+  function phoenixRadioItems(element) {
+    if (!isPhoenixRadioGroup(element)) return [];
+    return Array.from(
+      element.querySelectorAll(".phoenix-radio-group__radioItem"),
+    ).filter(isRendered);
+  }
+
+  function phoenixRadioOptionLabel(item) {
+    return fieldLabel(
+      item.querySelector(".phoenix-radio__radio-text")?.textContent ||
+        item.textContent ||
+        "",
+    );
+  }
+
+  function phoenixRadioClickTarget(item) {
+    return item.querySelector(".phoenix-radio") || item;
+  }
+
+  function selectedPhoenixRadioItem(element) {
+    return (
+      phoenixRadioItems(element).find((item) =>
+        Boolean(
+          item.querySelector(
+            ".phoenix-radio--checked, .phoenix-radio__circle--checked",
+          ),
+        ),
+      ) || null
+    );
+  }
+
+  function phoenixRadioValue(element) {
+    const selected = selectedPhoenixRadioItem(element);
+    return selected ? phoenixRadioOptionLabel(selected) : "";
+  }
+
   function isDeclarationControl(element) {
-    if (
-      !(element instanceof HTMLInputElement) ||
-      !["checkbox", "radio"].includes(element.type)
-    ) {
+    const type =
+      element instanceof HTMLInputElement
+        ? element.type
+        : isPhoenixRadioGroup(element)
+          ? "radio"
+          : null;
+    if (!["checkbox", "radio"].includes(type)) {
       return false;
     }
     const describedBy = (element.getAttribute("aria-describedby") || "")
@@ -407,9 +493,12 @@
   }
 
   function fieldMetadata(element) {
-    const tag = element.tagName.toLowerCase();
+    const phoenixRadio = isPhoenixRadioGroup(element);
+    const tag = phoenixRadio ? "input" : element.tagName.toLowerCase();
     const type =
-      tag === "input"
+      phoenixRadio
+        ? "radio"
+        : tag === "input"
         ? (element.getAttribute("type") || "text").toLowerCase()
         : tag === "button"
           ? (element.getAttribute("type") || "submit").toLowerCase()
@@ -426,8 +515,12 @@
     const constraints = constraintNames
       .filter((name) => element.getAttribute(name))
       .map((name) => [name, element.getAttribute(name)]);
-    const options =
-      tag === "select"
+    const options = phoenixRadio
+      ? phoenixRadioItems(element).map((item) => {
+          const label = phoenixRadioOptionLabel(item);
+          return { value: label, label };
+        })
+      : tag === "select"
         ? Array.from(element.options).map((option) => ({
             value: option.value,
             label: text(option.textContent),
@@ -452,7 +545,8 @@
       autocomplete: element.getAttribute("autocomplete") || null,
       required: hasRequiredMarker(element),
       disabled: element.hasAttribute("disabled"),
-      readonly: element.hasAttribute("readonly"),
+      readonly:
+        element.hasAttribute("readonly") || isPhoenixSelectElement(element),
       manual_satisfied:
         type === "file" && element instanceof HTMLInputElement
           ? Boolean(element.files?.length)
@@ -464,7 +558,16 @@
     };
   }
 
+  function isPhoenixSelectElement(element) {
+    return (
+      element instanceof HTMLInputElement &&
+      element.classList.contains("phoenix-select__input") &&
+      Boolean(element.closest(".phoenix-select"))
+    );
+  }
+
   function interactionKindFor(element) {
+    if (isPhoenixRadioGroup(element)) return "generic_switch";
     if (!(element instanceof HTMLInputElement)) {
       return null;
     }
@@ -474,12 +577,7 @@
     ) {
       return "generic_switch";
     }
-    if (
-      element.classList.contains("phoenix-select__input") &&
-      element.closest(".phoenix-select")
-    ) {
-      return "phoenix_select";
-    }
+    if (isPhoenixSelectElement(element)) return "generic_combobox";
     if (!element.hasAttribute("readonly")) return null;
     const handler = element.getAttribute("onclick") || "";
     if (/\bselectGraduateSchool\s*\(/.test(handler)) {
@@ -626,6 +724,9 @@
   }
 
   function hasExistingValue(element, root) {
+    if (isPhoenixRadioGroup(element)) {
+      return Boolean(phoenixRadioValue(element));
+    }
     if (element instanceof HTMLSelectElement) {
       if (!text(element.value)) return false;
       const selected = element.selectedOptions[0];
@@ -695,6 +796,19 @@
     return text(left).toLocaleLowerCase() === text(right).toLocaleLowerCase();
   }
 
+  function activateElement(element) {
+    if (element instanceof HTMLElement && typeof element.click === "function") {
+      element.click();
+      return;
+    }
+    element.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+
   function expectedChecked(value) {
     return ["true", "1", "yes", "on"].includes(
       String(value).toLowerCase(),
@@ -703,6 +817,32 @@
 
   function fieldValueMatches(element, field) {
     if (!element?.isConnected || !isRendered(element)) return false;
+    if (isPhoenixRadioGroup(element)) {
+      const value = phoenixRadioValue(element);
+      return (
+        sameText(value, field.value) ||
+        (Boolean(field.display_value) &&
+          sameText(value, field.display_value))
+      );
+    }
+    if (
+      isPhoenixSelectElement(element) &&
+      /(?:籍贯|现居住地|生源地|户籍|工作城市|意向城市|所在地区|\b(?:location|city|region)\b)/i.test(
+        text(field.site_label || ""),
+      )
+    ) {
+      const actual = text(element.value);
+      const expected = [field.value, field.display_value]
+        .map((value) => text(String(value || "")))
+        .filter(Boolean);
+      return Boolean(
+        actual &&
+          expected.some(
+            (candidate) =>
+              sameText(actual, candidate) || candidate.endsWith(actual),
+          ),
+      );
+    }
     if (element instanceof HTMLSelectElement) {
       const selected = element.selectedOptions[0];
       return (
@@ -731,8 +871,85 @@
     );
   }
 
+  function originalSnapshot(element, field, radioGroup = null) {
+    return {
+      selector: field.selector,
+      value: isPhoenixRadioGroup(element)
+        ? phoenixRadioValue(element)
+        : element.value,
+      title: element.getAttribute("title"),
+      checked: Boolean(element.checked),
+      checkable:
+        element instanceof HTMLInputElement &&
+        ["checkbox", "radio"].includes(element.type),
+      phoenix_radio_group: isPhoenixRadioGroup(element),
+      field_signature: field.field_signature,
+      interaction_kind: field.interaction_kind || null,
+      related: relatedOriginals(element, field.interaction_kind),
+      radioGroup,
+    };
+  }
+
+  function originalHasValue(original) {
+    if (original.radioGroup) {
+      return original.radioGroup.some((member) => member.checked);
+    }
+    if (original.phoenix_radio_group) return Boolean(text(original.value));
+    if (original.checkable) return original.checked;
+    return Boolean(text(original.value));
+  }
+
+  function originalMatches(element, original) {
+    if (!element?.isConnected) return false;
+    if (isPhoenixRadioGroup(element)) {
+      return sameText(phoenixRadioValue(element), original.value);
+    }
+    if (original.radioGroup) {
+      const members = original.radioGroup.filter(
+        (member) => member.element?.isConnected,
+      );
+      return (
+        members.length === original.radioGroup.length &&
+        members.every(
+          (member) => member.element.checked === member.checked,
+        )
+      );
+    }
+    if (
+      "checked" in element &&
+      Boolean(element.checked) !== Boolean(original.checked)
+    ) {
+      return false;
+    }
+    if (String(element.value ?? "") !== String(original.value ?? "")) {
+      return false;
+    }
+    return (original.related || []).every((related) => {
+      const relatedElement = document.querySelector(related.selector);
+      return (
+        relatedElement &&
+        String(relatedElement.value ?? "") ===
+          String(related.value ?? "")
+      );
+    });
+  }
+
   function restoreOriginal(element, original) {
     if (!element?.isConnected) return false;
+    if (isPhoenixRadioGroup(element)) {
+      const expected = text(original.value || "");
+      const target = phoenixRadioItems(element).find((item) =>
+        sameText(phoenixRadioOptionLabel(item), expected),
+      );
+      if (target instanceof HTMLElement) {
+        phoenixRadioClickTarget(target).click();
+        return sameText(phoenixRadioValue(element), expected);
+      }
+      const selected = selectedPhoenixRadioItem(element);
+      if (!selected) return true;
+      phoenixRadioClickTarget(selected).click();
+      return !phoenixRadioValue(element);
+    }
     if (original.radioGroup) {
       const members = original.radioGroup.filter(
         (member) => member.element?.isConnected,
@@ -749,18 +966,26 @@
       return members.length > 0;
     }
     if (
-      original.interaction_kind === "phoenix_select" &&
+      isPhoenixSelectElement(element) &&
+      [
+        "generic_combobox",
+        "phoenix_select",
+        "phoenix_date",
+        "phoenix_month",
+        "phoenix_area",
+      ].includes(original.interaction_kind) &&
       !text(original.value)
     ) {
       const root = element.closest(".phoenix-select");
       const clear = root?.querySelector(
         ".phoenix-select__clearIcon--show, .phoenix-select__clearIcon",
       );
-      if (clear instanceof HTMLElement) {
-        clear.click();
-        return true;
+      if (clear instanceof Element) {
+        activateElement(clear);
+        return !text(element.value);
       }
     }
+    if (element instanceof HTMLElement) element.focus();
     nativeSet(element, "value", original.value);
     if (original.title === null) {
       element.removeAttribute("title");
@@ -782,6 +1007,12 @@
       dispatchValueEvents(relatedElement);
     }
     dispatchValueEvents(element);
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement
+    ) {
+      element.blur();
+    }
     return true;
   }
 
@@ -960,6 +1191,104 @@
       return { ok: false, reasonCode: "phoenix_root_not_found" };
     }
     root.click();
+    const dateMatch = String(field.value).match(
+      /^(\d{4})-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/,
+    );
+    if (dateMatch) {
+      const calendar = await waitForValue(
+        () =>
+          visibleElement(
+            ".phoenix-calendar:not(.phoenix-calendar-month-calendar)",
+          ),
+        1200,
+      );
+      if (!calendar) {
+        return { ok: false, reasonCode: "phoenix_calendar_not_opened" };
+      }
+      const readYearMonth = () => {
+        const year = Number(
+          text(
+            calendar.querySelector(".phoenix-calendar-year-select")
+              ?.textContent,
+          ).match(/\d{4}/)?.[0],
+        );
+        const month = Number(
+          text(
+            calendar.querySelector(".phoenix-calendar-month-select")
+              ?.textContent,
+          ).match(/\d{1,2}/)?.[0],
+        );
+        return { year, month };
+      };
+      const previousYear = calendar.querySelector(
+        ".phoenix-calendar-prev-year-btn",
+      );
+      const nextYear = calendar.querySelector(
+        ".phoenix-calendar-next-year-btn",
+      );
+      const previousMonth = calendar.querySelector(
+        ".phoenix-calendar-prev-month-btn",
+      );
+      const nextMonth = calendar.querySelector(
+        ".phoenix-calendar-next-month-btn",
+      );
+      const targetYear = Number(dateMatch[1]);
+      const targetMonth = Number(dateMatch[2]);
+      const targetDay = Number(dateMatch[3]);
+      let current = readYearMonth();
+      if (
+        !Number.isInteger(current.year) ||
+        !Number.isInteger(current.month) ||
+        !(previousYear instanceof HTMLElement) ||
+        !(nextYear instanceof HTMLElement) ||
+        !(previousMonth instanceof HTMLElement) ||
+        !(nextMonth instanceof HTMLElement)
+      ) {
+        return { ok: false, reasonCode: "phoenix_date_control_not_found" };
+      }
+      let navigationCount = 0;
+      while (current.year !== targetYear && navigationCount < 150) {
+        const before = current.year;
+        (current.year > targetYear ? previousYear : nextYear).click();
+        const changed = await waitForValue(() => {
+          const candidate = readYearMonth();
+          return candidate.year !== before ? candidate : null;
+        }, 800);
+        if (!changed) {
+          return { ok: false, reasonCode: "phoenix_year_navigation_failed" };
+        }
+        current = changed;
+        navigationCount += 1;
+      }
+      navigationCount = 0;
+      while (current.month !== targetMonth && navigationCount < 12) {
+        const before = current.month;
+        (current.month > targetMonth ? previousMonth : nextMonth).click();
+        const changed = await waitForValue(() => {
+          const candidate = readYearMonth();
+          return candidate.month !== before ? candidate : null;
+        }, 800);
+        if (!changed) {
+          return { ok: false, reasonCode: "phoenix_month_navigation_failed" };
+        }
+        current = changed;
+        navigationCount += 1;
+      }
+      const day = Array.from(
+        calendar.querySelectorAll(
+          ".phoenix-calendar-cell:not(.phoenix-calendar-last-month-cell):not(.phoenix-calendar-next-month-cell) .phoenix-calendar-date",
+        ),
+      ).find(
+        (candidate) =>
+          isRendered(candidate) &&
+          Number(text(candidate.textContent)) === targetDay,
+      );
+      if (!(day instanceof HTMLElement)) {
+        return { ok: false, reasonCode: "phoenix_day_not_found" };
+      }
+      day.click();
+      return { ok: true, reasonCode: null };
+    }
     const monthMatch = String(field.value).match(
       /^(\d{4})-(0[1-9]|1[0-2])$/,
     );
@@ -1025,6 +1354,98 @@
       month.click();
       return { ok: true, reasonCode: null };
     }
+    const areaPicker = await waitForValue(
+      () => visibleElement(".area-selector-container"),
+      300,
+    );
+    if (areaPicker) {
+      const expected = [field.value, field.display_value]
+        .map((value) => text(String(value || "")))
+        .filter(Boolean);
+      const optionLabel = (candidate) =>
+        text(
+          candidate.querySelector(".area-text-label")?.textContent ||
+            candidate.textContent,
+        );
+      const visibleOptions = () =>
+        Array.from(
+          areaPicker.querySelectorAll(".area-item-container"),
+        ).filter(isRendered);
+      const matchingOption = (exclude = "") =>
+        visibleOptions()
+          .filter((candidate) => optionLabel(candidate) !== exclude)
+          .filter((candidate) =>
+            expected.some((value) => value.includes(optionLabel(candidate))),
+          )
+          .sort(
+            (left, right) =>
+              optionLabel(right).length - optionLabel(left).length,
+          )[0] || null;
+      const first = matchingOption();
+      if (!(first instanceof HTMLElement)) {
+        return { ok: false, reasonCode: "phoenix_area_option_not_found" };
+      }
+      const firstLabel = optionLabel(first);
+      const firstIsBranch = Boolean(
+        first.querySelector(
+          ".area-icon-RadioUnchecked-disabled, .area-icon-right",
+        ),
+      );
+      let leaf = first;
+      if (firstIsBranch) {
+        const branchTarget =
+          first.querySelector(".area-icon-right") ||
+          first.querySelector(".area-text-label") ||
+          first;
+        activateElement(branchTarget);
+        leaf = await waitForValue(() => matchingOption(firstLabel), 800);
+        if (!(leaf instanceof HTMLElement)) {
+          const cancel = Array.from(
+            areaPicker.querySelectorAll(".button-container"),
+          ).find((candidate) => sameText(candidate.textContent, "取消"));
+          (
+            cancel?.querySelector(".phoenix-button__content") || cancel
+          )?.click();
+          return {
+            ok: false,
+            reasonCode: "phoenix_area_detail_required",
+          };
+        }
+      }
+      const selectionTarget =
+        Array.from(leaf.querySelectorAll(".icon-container")).find(
+          (candidate) =>
+            !candidate.querySelector(".area-icon-RadioUnchecked-disabled"),
+        ) || leaf.querySelector(".area-text-label") || leaf;
+      activateElement(selectionTarget);
+      const selected = await waitForValue(
+        () =>
+          leaf.querySelector(".area-icon-RadioChecked") ||
+          (text(areaPicker.querySelector(".right-container")?.textContent).includes(
+            optionLabel(leaf),
+          )
+            ? true
+            : null),
+        800,
+      );
+      if (!selected) {
+        return { ok: false, reasonCode: "phoenix_area_value_not_selected" };
+      }
+      const confirm = Array.from(
+        areaPicker.querySelectorAll(".button-container"),
+      ).find((candidate) => sameText(candidate.textContent, "确定"));
+      if (!(confirm instanceof HTMLElement)) {
+        return { ok: false, reasonCode: "phoenix_area_confirm_not_found" };
+      }
+      (confirm.querySelector(".phoenix-button__content") || confirm).click();
+      const applied = await waitForValue(
+        () => (text(element.value) ? true : null),
+        1000,
+      );
+      return applied
+        ? { ok: true, reasonCode: null }
+        : { ok: false, reasonCode: "phoenix_area_value_not_applied" };
+    }
     const expected = [field.value, field.display_value]
       .map((value) => text(String(value || "")))
       .filter(Boolean);
@@ -1057,8 +1478,34 @@
     return { ok: true, reasonCode: null };
   }
 
+  async function fillPhoenixRadioGroup(element, field) {
+    const expected = [field.value, field.display_value]
+      .map((value) => text(String(value || "")))
+      .filter(Boolean);
+    const option = phoenixRadioItems(element).find((item) =>
+      expected.some((candidate) =>
+        sameText(phoenixRadioOptionLabel(item), candidate),
+      ),
+    );
+    if (!(option instanceof HTMLElement)) {
+      return { ok: false, reasonCode: "phoenix_radio_option_not_found" };
+    }
+    phoenixRadioClickTarget(option).click();
+    const applied = await waitForValue(
+      () => (fieldValueMatches(element, field) ? true : null),
+      1200,
+    );
+    return applied
+      ? { ok: true, reasonCode: null }
+      : { ok: false, reasonCode: "phoenix_radio_value_not_applied" };
+  }
+
   async function fillSupportedInteraction(element, field) {
-    if (field.interaction_kind === "phoenix_select") {
+    if (
+      field.interaction_kind === "phoenix_select" ||
+      (field.interaction_kind === "generic_combobox" &&
+        isPhoenixSelectElement(element))
+    ) {
       return fillPhoenixSelect(element, field);
     }
     if (field.interaction_kind === "hotjob_school_picker") {
@@ -1123,6 +1570,9 @@
       return { ok: true, reasonCode: null };
     }
     if (field.interaction_kind === "generic_switch") {
+      if (isPhoenixRadioGroup(element)) {
+        return fillPhoenixRadioGroup(element, field);
+      }
       nativeSet(element, "checked", expectedChecked(field.value));
       dispatchValueEvents(element);
       return { ok: true, reasonCode: null };
@@ -1312,7 +1762,7 @@
   function editableControls(root) {
     return Array.from(
       root.querySelectorAll(
-        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])',
+        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), .phoenix-radio-group',
       ),
     ).filter(isRendered);
   }
@@ -1338,7 +1788,7 @@
   function observableControls(root) {
     return Array.from(
       root.querySelectorAll(
-        'input:not([type="hidden"]), select, textarea',
+        'input:not([type="hidden"]), select, textarea, .phoenix-radio-group',
       ),
     ).filter((element) => {
       const visibleRequiredFile =
@@ -1837,6 +2287,19 @@
         }
       }
     }
+    const initialSnapshots = new Map(
+      resolved.map(([field, element]) => [
+        field.field_signature,
+        originalSnapshot(
+          element,
+          field,
+          element instanceof HTMLInputElement &&
+            element.type === "radio"
+            ? radioSnapshots.get(element.name || element)
+            : null,
+        ),
+      ]),
+    );
     for (const [field, element] of resolved) {
       if (
         isDeclarationControl(element) &&
@@ -1882,6 +2345,20 @@
         continue;
       }
       if (hasExistingValue(element, candidate.root)) {
+        const initial = initialSnapshots.get(field.field_signature);
+        if (initial && !originalHasValue(initial)) {
+          originals.push(initial);
+          results.push({
+            field_signature: field.field_signature,
+            status: fieldValueMatches(element, field)
+              ? "filled"
+              : "missing",
+            reason_code: fieldValueMatches(element, field)
+              ? "filled_by_page"
+              : "page_derived_value_mismatch",
+          });
+          continue;
+        }
         results.push({
           field_signature: field.field_signature,
           status: "skipped",
@@ -1889,20 +2366,7 @@
         });
         continue;
       }
-      const original = {
-        selector: field.selector,
-        value: element.value,
-        title: element.getAttribute("title"),
-        checked: Boolean(element.checked),
-        field_signature: field.field_signature,
-        interaction_kind: field.interaction_kind || null,
-        related: relatedOriginals(element, field.interaction_kind),
-        radioGroup:
-          element instanceof HTMLInputElement &&
-          element.type === "radio"
-            ? radioSnapshots.get(element.name || element)
-            : null,
-      };
+      const original = initialSnapshots.get(field.field_signature);
       let writeAttempted = false;
       let failureReason = null;
       if (field.interaction_kind) {
@@ -1955,11 +2419,18 @@
         nativeSet(element, "checked", true);
         writeAttempted = true;
       } else {
+        element.focus();
         nativeSet(element, "value", field.value);
         writeAttempted = true;
       }
       if (!field.interaction_kind && writeAttempted) {
         dispatchValueEvents(element);
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.blur();
+        }
       }
       const applied =
         writeAttempted &&
@@ -1979,6 +2450,39 @@
         status: "filled",
         reason_code: null,
       });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    for (const result of results) {
+      if (result.status !== "filled") continue;
+      const resolvedField = resolved.find(
+        ([field]) => field.field_signature === result.field_signature,
+      );
+      if (!resolvedField) continue;
+      const [field, element] = resolvedField;
+      if (fieldValueMatches(element, field)) continue;
+      const originalIndex = originals.findIndex(
+        (item) => item.field_signature === result.field_signature,
+      );
+      if (originalIndex >= 0) {
+        restoreOriginal(element, originals[originalIndex]);
+        originals.splice(originalIndex, 1);
+      }
+      result.status = "missing";
+      result.reason_code = "value_not_persisted";
+    }
+    const originalSignatures = new Set(
+      originals.map((item) => item.field_signature),
+    );
+    for (const [field, element] of resolved) {
+      const initial = initialSnapshots.get(field.field_signature);
+      if (
+        initial &&
+        !originalSignatures.has(field.field_signature) &&
+        !originalMatches(element, initial)
+      ) {
+        originals.push(initial);
+        originalSignatures.add(field.field_signature);
+      }
     }
     globalThis.__ORA_FILL_UNDO__ =
       globalThis.__ORA_FILL_UNDO__ || {};
@@ -2013,30 +2517,55 @@
     };
   }
 
-  function undo(taskId, stepId = null) {
+  async function undo(taskId, stepId = null) {
     const undoKey = stepId ? `${taskId}:${stepId}` : taskId;
     const entry = globalThis.__ORA_FILL_UNDO__?.[undoKey];
     if (!entry) {
       return { ok: false, message: "没有可撤销的本地填写记录。" };
     }
-    const results = [];
+    const entries = [];
     for (const original of entry.originals) {
       const element = document.querySelector(original.selector);
       if (!element) {
-        results.push({
+        entries.push({
+          original,
+          element: null,
           field_signature: original.field_signature,
           status: "missing",
           reason_code: "field_not_found",
         });
         continue;
       }
-      const restored = restoreOriginal(element, original);
-      results.push({
+      restoreOriginal(element, original);
+      entries.push({
+        original,
+        element,
         field_signature: original.field_signature,
-        status: restored ? "filled" : "missing",
-        reason_code: restored ? "restored" : "field_not_found",
+        status: "missing",
+        reason_code: "restore_not_applied",
       });
     }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    for (const item of entries) {
+      if (!item.element || originalMatches(item.element, item.original)) {
+        continue;
+      }
+      restoreOriginal(item.element, item.original);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    for (const item of entries) {
+      if (item.element && originalMatches(item.element, item.original)) {
+        item.status = "filled";
+        item.reason_code = "restored";
+      }
+    }
+    const results = entries.map(
+      ({ field_signature, status, reason_code }) => ({
+        field_signature,
+        status,
+        reason_code,
+      }),
+    );
     let removedRepeatGroupCount = 0;
     for (const section of [...(entry.repeatAdditions || [])].reverse()) {
       if (!section?.isConnected) continue;
@@ -2046,7 +2575,18 @@
     if (globalThis.__ORA_REPEAT_ADDITIONS__) {
       delete globalThis.__ORA_REPEAT_ADDITIONS__[taskId];
     }
-    delete globalThis.__ORA_FILL_UNDO__[undoKey];
+    const failedOriginals = entries
+      .filter((item) => item.status !== "filled")
+      .map((item) => item.original);
+    if (failedOriginals.length) {
+      globalThis.__ORA_FILL_UNDO__[undoKey] = {
+        pageFingerprint: entry.pageFingerprint,
+        originals: failedOriginals,
+        repeatAdditions: [],
+      };
+    } else {
+      delete globalThis.__ORA_FILL_UNDO__[undoKey];
+    }
     return {
       ok: true,
       event_type: "fill_undone",

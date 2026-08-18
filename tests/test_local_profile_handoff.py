@@ -444,6 +444,67 @@ def test_private_answer_stays_local_and_extension_receives_confirmed_value(
     ]
 
 
+@pytest.mark.parametrize(
+    ("answer", "expected_resolved"),
+    [
+        ("示例省", False),
+        ("示例省示例市", True),
+    ],
+)
+def test_iflytek_native_place_requires_city_level_local_fact(
+    tmp_path: Path,
+    answer: str,
+    expected_resolved: bool,
+) -> None:
+    service, product = _service(tmp_path)
+    resolved = _resolved()
+    resolved["site_domain"] = "iflytek.zhiye.com"
+    resolved["questions"][0].update(
+        {
+            "site_label": "籍贯",
+            "canonical_field": "native_place",
+            "suggested_profile_key": "native_place",
+            "aliases": ["籍贯"],
+            "bindings": [
+                {
+                    "field_signature": "b" * 64,
+                    "selector": "#native-place",
+                    "control_type": "text",
+                    "options": [],
+                }
+            ],
+        }
+    )
+    product.resolved = resolved
+    proposal = service.submit(
+        handoff_token="orahandoff_iflytek-native-place",
+        answers=[{"question_id": QUESTION_ID, "value": answer}],
+        origin="https://recruit.agentmesh360.com",
+    )
+    service.store.confirm_proposal(
+        proposal["proposal_id"],
+        proposal["proposal_capability"],
+    )
+    local_connection = service.connect_extension(
+        installation_id=INSTALLATION_ID,
+        pairing_secret=PAIRING_SECRET,
+        origin=EXTENSION_ORIGIN,
+    )
+
+    resolution = service.resolved_fields(
+        fill_task_id=FILL_TASK_ID,
+        session_token=local_connection["session_token"],
+        origin=EXTENSION_ORIGIN,
+    )
+
+    if expected_resolved:
+        assert resolution["resolved_question_ids"] == [QUESTION_ID]
+        assert resolution["fields"][0]["value"] == answer
+    else:
+        assert resolution["resolved_question_ids"] == []
+        assert resolution["fields"] == []
+
+
 def test_extension_pairing_proxies_cloud_session_without_exposing_api_key(
     tmp_path: Path,
 ) -> None:

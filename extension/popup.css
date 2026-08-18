@@ -32,6 +32,31 @@ header {
   gap: 3px;
 }
 
+.product-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.product-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-badge {
+  flex: none;
+  padding: 1px 4px;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .header-tools {
   display: flex;
   flex-direction: column;
@@ -305,6 +330,48 @@ button:disabled {
   background: #fff;
   border: 1px solid #d9dfdb;
   border-radius: 6px;
+}
+
+.execution-issues {
+  margin-top: 10px;
+  padding: 10px;
+  color: #8f2424;
+  background: #fdeeee;
+  border: 1px solid #e2a2a2;
+  border-radius: 6px;
+}
+
+.execution-issues > strong {
+  display: block;
+  font-size: 11px;
+}
+
+.execution-issues ul {
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.execution-issues li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid #efc7c7;
+}
+
+.execution-issues li strong,
+.execution-issues li span {
+  overflow-wrap: anywhere;
+}
+
+.execution-issues li strong {
+  font-size: 10px;
+}
+
+.execution-issues li span {
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .field-row {

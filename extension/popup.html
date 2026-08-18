@@ -10,7 +10,10 @@
     <header>
       <span class="mark">AM</span>
       <span class="product-name">
-        <strong data-i18n="官网申请填写器">Career-site form assistant</strong>
+        <span class="product-heading">
+          <strong data-i18n="官网申请填写器">Career-site form assistant</strong>
+          <small id="extension-version" class="version-badge" hidden></small>
+        </span>
         <small id="connection" data-i18n="尚未连接 AgentMesh360">Not connected to AgentMesh360</small>
       </span>
       <span class="header-tools">
@@ -58,6 +61,10 @@
           </button>
         </aside>
         <div id="field-list" class="field-list"></div>
+        <aside id="execution-issues" class="execution-issues" hidden>
+          <strong data-i18n="这些字段需要手动处理">These fields need manual action</strong>
+          <ul id="execution-issue-list"></ul>
+        </aside>
         <p class="boundary" data-i18n="附件和验证码保持手动；必填声明仅在你明确确认后填写。下一步和最终提交由你本人操作。">
           Attachments, CAPTCHA, declarations, next-step navigation, and final submission remain manual.
         </p>

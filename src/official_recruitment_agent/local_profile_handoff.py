@@ -644,6 +644,7 @@ class LocalProfileStore:
                 question_fields = _resolved_binding_fields(
                     question,
                     str(fact["value"]),
+                    site_domain=str(resolved.get("site_domain") or ""),
                 )
                 if not question_fields:
                     continue
@@ -829,7 +830,21 @@ def _normalize_answers(
 def _resolved_binding_fields(
     question: dict[str, Any],
     answer_value: str,
+    *,
+    site_domain: str = "",
 ) -> list[dict[str, Any]]:
+    normalized_label = "".join(
+        str(question.get("site_label") or "").split()
+    )
+    if (
+        site_domain.casefold() == "iflytek.zhiye.com"
+        and any(token in normalized_label for token in ("籍贯", "现居住地"))
+        and re.fullmatch(
+            r".+(?:省|自治区|特别行政区)",
+            "".join(answer_value.split()),
+        )
+    ):
+        return []
     fields: list[dict[str, Any]] = []
     for binding in question.get("bindings") or []:
         if not isinstance(binding, dict):
