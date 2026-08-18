@@ -641,6 +641,9 @@ class LocalProfileStore:
                 )
                 if fact is None:
                     continue
+                if resolved.get("context_kind") == "profile_foundation":
+                    resolved_ids.append(str(question["question_id"]))
+                    continue
                 question_fields = _resolved_binding_fields(
                     question,
                     str(fact["value"]),
@@ -650,13 +653,26 @@ class LocalProfileStore:
                     continue
                 resolved_ids.append(str(question["question_id"]))
                 fields.extend(question_fields)
-        return {
-            "contract_version": "local-profile-resolution-v1",
+        is_profile_foundation = (
+            resolved.get("context_kind") == "profile_foundation"
+        )
+        resolution = {
+            "contract_version": (
+                "local-profile-resolution-v2"
+                if is_profile_foundation
+                else "local-profile-resolution-v1"
+            ),
             "workspace_ref": resolved["workspace_ref"],
             "fill_task_id": resolved["fill_task_id"],
             "resolved_question_ids": sorted(set(resolved_ids)),
             "fields": fields,
         }
+        if is_profile_foundation:
+            resolution["context_kind"] = "profile_foundation"
+            resolution["context_id"] = (
+                resolved.get("context_id") or resolved["fill_task_id"]
+            )
+        return resolution
 
     def _find_fact(
         self,
@@ -1240,7 +1256,7 @@ class LocalHandoffService:
                 "资料交接来源与工作台不一致。",
             )
         resolution = self.store.resolution_for(resolved)
-        return {
+        status = {
             "contract_version": resolution["contract_version"],
             "workspace_ref": resolution["workspace_ref"],
             "fill_task_id": resolution["fill_task_id"],
@@ -1248,6 +1264,10 @@ class LocalHandoffService:
                 "resolved_question_ids"
             ],
         }
+        if resolution["contract_version"] == "local-profile-resolution-v2":
+            status["context_kind"] = resolution["context_kind"]
+            status["context_id"] = resolution["context_id"]
+        return status
 
     def resolved_fields(
         self,

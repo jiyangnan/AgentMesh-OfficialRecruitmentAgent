@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.5
+version: 0.3.6
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -92,6 +92,14 @@ filling a recruitment form.
    it.
 8. Delete the temporary structured JSON after the proposal is accepted by the
    CLI.
+9. After Web confirms the first profile, run `ora-workbench profile-foundation`.
+   If common dimensions are missing, direct the user to **个人档案 -> 补全常用资料**
+   in the Web workbench. Do not ask for ID numbers, detailed addresses or other
+   sensitive answers in chat; the Web browser sends answers directly to the
+   local Agent.
+10. Foundation completion is separate from a recruitment-page gate. The user
+    may postpone recommended items, and this must never turn an optional site
+    field into a blocking profile question.
 
 The raw resume stays local. The adapter sends only bounded structured fields,
 the source suffix and a SHA-256 digest.
