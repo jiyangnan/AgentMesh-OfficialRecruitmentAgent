@@ -42,10 +42,13 @@ const profileGapTitle = document.querySelector("#profile-gap-title");
 const profileGapCopy = document.querySelector("#profile-gap-copy");
 const completeProfileButton = document.querySelector("#complete-profile");
 const fieldList = document.querySelector("#field-list");
+const executionIssues = document.querySelector("#execution-issues");
+const executionIssueList = document.querySelector("#execution-issue-list");
 const reviewApproval = document.querySelector("#review-approved");
 const executeButton = document.querySelector("#execute");
 const undoButton = document.querySelector("#undo");
 const connection = document.querySelector("#connection");
+const extensionVersion = document.querySelector("#extension-version");
 const message = document.querySelector("#message");
 const openWorkbenchButton = document.querySelector("#open-workbench");
 
@@ -61,10 +64,34 @@ let refreshFromTaskId = null;
 let localProfileResolutionError = null;
 let pendingExecutionEvidence = null;
 
+function renderExtensionVersion() {
+  const version = chrome.runtime?.getManifest?.()?.version;
+  if (!extensionVersion || !version) return;
+  extensionVersion.textContent = `v${version}`;
+  extensionVersion.title = `v${version}`;
+  extensionVersion.setAttribute("aria-label", `v${version}`);
+  extensionVersion.hidden = false;
+}
+
+renderExtensionVersion();
+
 function showMessage(text, error = false) {
   message.hidden = false;
   message.textContent = localizeMessage(text);
   message.classList.toggle("error", error);
+}
+
+function responseErrorMessage(payload, fallback) {
+  const base =
+    payload?.error?.message ?? payload?.detail?.message ?? fallback;
+  const violations = payload?.error?.details?.violations;
+  if (!Array.isArray(violations) || violations.length === 0) return base;
+  const locations = violations
+    .slice(0, 4)
+    .map((item) => `${item.path ?? "unknown"} (${item.type ?? "invalid"})`)
+    .join("; ");
+  const remaining = violations.length > 4 ? `; +${violations.length - 4}` : "";
+  return `${base} ${locations}${remaining}`;
 }
 
 async function persistPendingExecutionEvidence(task, result, taskVersion) {
@@ -152,6 +179,53 @@ function resetReviewApproval() {
   reviewApproval.disabled = true;
   reviewApproval.dataset.reviewKey = "";
   executeButton.disabled = true;
+}
+
+function clearExecutionIssues() {
+  if (!executionIssues || !executionIssueList) return;
+  executionIssueList.replaceChildren();
+  executionIssues.hidden = true;
+}
+
+function renderExecutionIssues(result) {
+  if (!executionIssues || !executionIssueList) return;
+  const fields = [
+    ...(currentTask?.plan?.fields ?? []),
+    ...(currentTask?.plan?.review_fields ?? []),
+  ];
+  const bySignature = new Map(
+    fields.map((field) => [field.field_signature, field]),
+  );
+  const reasonCopy = {
+    phoenix_area_detail_required: t(
+      "本机档案只有省级信息，请在工作台补充到市级后重新识别。",
+    ),
+    value_not_persisted: t(
+      "网页没有保留自动写入结果，请在原网页手动填写。",
+    ),
+    manual_declaration: t("请本人在原网页明确确认该声明。"),
+  };
+  const rows = result.field_results
+    .filter((item) =>
+      ["missing", "blocked", "fingerprint_mismatch"].includes(
+        item.status,
+      ),
+    )
+    .map((item) => {
+      const field = bySignature.get(item.field_signature);
+      const row = document.createElement("li");
+      const name = document.createElement("strong");
+      const reason = document.createElement("span");
+      name.textContent =
+        field?.site_label || field?.profile_field || t("待人工处理字段");
+      reason.textContent =
+        reasonCopy[item.reason_code] ||
+        t("该控件未可靠写入，请在原网页手动处理。");
+      row.append(name, reason);
+      return row;
+    });
+  executionIssueList.replaceChildren(...rows);
+  executionIssues.hidden = rows.length === 0;
 }
 
 function offerReviewApproval(task) {
@@ -852,9 +926,7 @@ async function observeTask(sessionTask, observation) {
   const observed = await response.json();
   if (!response.ok) {
     throw new Error(
-      observed?.error?.message ??
-        observed?.detail?.message ??
-        "生成当前步骤的填写计划失败。",
+      responseErrorMessage(observed, "生成当前步骤的填写计划失败。"),
     );
   }
   return validateFillTask(observed.result, currentTab.url);
@@ -1097,6 +1169,7 @@ function renderGateSummary(items) {
 
 function renderTask(task) {
   resetReviewApproval();
+  clearExecutionIssues();
   const stepIndex = task.plan.step_index ?? 1;
   stepLabel.textContent = t("第 {step} 步", { step: stepIndex });
   targetOrigin.textContent = new URL(
@@ -1219,6 +1292,7 @@ async function injectExecutor(tabId, target) {
 }
 
 function renderAcknowledgedExecution(result) {
+  renderExecutionIssues(result);
   const filledCount = result.field_results.filter(
     (item) => item.status === "filled",
   ).length;
@@ -1246,9 +1320,9 @@ function renderAcknowledgedExecution(result) {
     currentTask?.plan?.profile_questions?.length ?? 0;
   const manualRequiredCount = manualRequiredItems(currentTask).length;
   setConnection(
-    profileQuestionCount || unresolvedCount
+    profileQuestionCount
       ? "第 {step} 步待补档案"
-      : manualRequiredCount
+      : manualRequiredCount || unresolvedCount
         ? "第 {step} 步需手动处理"
       : "第 {step} 步已填写",
     { step: currentTask?.plan?.step_index ?? 1 },
@@ -1473,12 +1547,29 @@ undoButton.addEventListener("click", async () => {
     });
     const result = execution.result;
     if (!result?.ok) throw new Error(result?.message ?? "撤销失败。");
+    const restoredCount = result.field_results.filter(
+      (item) => item.status === "filled" && item.reason_code === "restored",
+    ).length;
+    const failedCount = result.field_results.length - restoredCount;
+    if (failedCount) {
+      setConnection("撤销未完成");
+      undoButton.disabled = false;
+      showMessage(
+        t("已恢复 {restored} 个字段，另有 {failed} 个字段无法自动还原。请重新加载原网页后再次识别，系统不会把本次结果标记为已恢复。", {
+          restored: restoredCount,
+          failed: failedCount,
+        }),
+        true,
+      );
+      return;
+    }
     await sendEvidence(currentTask.fill_task_id, result);
     setConnection("已撤销当前步骤的填写");
+    clearExecutionIssues();
     resetReviewApproval();
     showMessage(
       t("已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。", {
-        count: result.field_results.length,
+        count: restoredCount,
         removed:
         result.removed_repeat_group_count
           ? t("；移除 {count} 条本次新增记录", {
