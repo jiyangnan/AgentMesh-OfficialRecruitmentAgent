@@ -5,6 +5,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -19,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def _extension_id(public_key: str) -> str:
     digest = hashlib.sha256(base64.b64decode(public_key)).hexdigest()[:32]
     return "".join(chr(ord("a") + int(value, 16)) for value in digest)
+
+
+def _public_adapter_version() -> str:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        return str(tomllib.load(handle)["project"]["version"])
 
 
 def test_extension_package_is_installable_and_contains_no_secret(
@@ -96,6 +102,7 @@ def test_extension_package_is_installable_and_contains_no_secret(
 
 
 def test_installer_uses_stable_assets_without_credentials() -> None:
+    adapter_version = _public_adapter_version()
     installer = (
         ROOT / "installer" / "install-agent.sh"
     ).read_text(encoding="utf-8")
@@ -113,7 +120,7 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
         'official_recruitment_agent-$ADAPTER_VERSION-py3-none-any.whl"'
         in installer
     )
-    assert 'ADAPTER_VERSION="0.1.6"' in installer
+    assert f'ADAPTER_VERSION="{adapter_version}"' in installer
     assert 'extension host install' in installer
     assert '"$VENV/bin/python" -m pip install' in installer
     assert "AGENTMESH_API_KEY=" not in installer
@@ -121,6 +128,7 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
 
 
 def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
+    adapter_version = _public_adapter_version()
     installer = (
         ROOT / "installer" / "install-agent.ps1"
     ).read_text(encoding="utf-8")
@@ -129,7 +137,7 @@ def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
     assert "AgentMesh360\\OfficialRecruitment" in installer
     assert "Scripts\\ora-workbench.exe" in installer
     assert "ora-workbench.cmd" in installer
-    assert '$AdapterVersion = "0.1.6"' in installer
+    assert f'$AdapterVersion = "{adapter_version}"' in installer
     assert 'extension host install' in installer
     assert (
         'official_recruitment_agent-$AdapterVersion-py3-none-any.whl'

@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.6
+version: 0.3.7
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -44,8 +44,11 @@ AI Agent.
 7. Run `ora-workbench profile-handoff start`. This command is idempotent: if
    the local handoff is already running it only verifies the current account.
    Run it yourself; do not ask the user to open a terminal or keep a process
-   running. Continue only when it reports `status: ready` and
-   `workspace_match: true`.
+   running. Continue only when it reports `status: ready`,
+   `workspace_match: true`, and the `capabilities` list contains
+   `resolved-required-answers-v1`. If that capability is absent, rerun the
+   official installation command yourself, restart the handoff, and verify
+   the capability before asking the user to retry.
 
 ### Local Profile Recovery
 

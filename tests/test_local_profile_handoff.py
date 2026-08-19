@@ -6,6 +6,7 @@ import os
 import sqlite3
 import stat
 import threading
+from copy import deepcopy
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -385,6 +386,8 @@ def test_status_uses_startup_workspace_without_cloud_request(
 
     assert ready["status"] == "ready"
     assert ready["workspace_match"] is True
+    assert ready["client_version"]
+    assert ready["capabilities"] == ["resolved-required-answers-v1"]
     assert mismatch["status"] == "workspace_mismatch"
     assert mismatch["workspace_match"] is False
     assert product.calls == []
@@ -442,6 +445,94 @@ def test_private_answer_stays_local_and_extension_receives_confirmed_value(
             "question_id": QUESTION_ID,
         }
     ]
+
+
+def test_handoff_only_requires_answers_not_already_confirmed_locally(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+    first = service.submit(
+        handoff_token="orahandoff-existing-required-answer",
+        answers=[{"question_id": QUESTION_ID, "value": SENTINEL}],
+        origin="https://recruit.agentmesh360.com",
+    )
+    service.store.confirm_proposal(
+        first["proposal_id"],
+        first["proposal_capability"],
+    )
+
+    unresolved_question_id = "pq_bbbbbbbbbbbbbbbbbbbbbbbb"
+    current = deepcopy(_resolved())
+    current["handoff_jti"] = "handoff-jti-only-unresolved-required"
+    current["questions"].append(
+        {
+            "question_id": unresolved_question_id,
+            "site_label": "当前居住地",
+            "canonical_field": "current_residence",
+            "suggested_profile_key": "current_residence",
+            "recommended_scope": "account",
+            "privacy": "standard",
+            "required": True,
+            "aliases": ["当前居住地"],
+            "bindings": [
+                {
+                    "field_signature": "b" * 64,
+                    "selector": "#current-residence",
+                    "control_type": "text",
+                    "options": [],
+                }
+            ],
+        }
+    )
+    product.resolved = current
+
+    proposal = service.submit(
+        handoff_token="orahandoff-only-unresolved-required",
+        answers=[
+            {
+                "question_id": unresolved_question_id,
+                "value": "示例城市",
+            }
+        ],
+        origin="https://recruit.agentmesh360.com",
+    )
+
+    assert proposal["status"] == "pending"
+    assert [item["question_id"] for item in proposal["items"]] == [
+        unresolved_question_id
+    ]
+
+
+def test_handoff_still_rejects_required_answer_missing_locally_and_in_request(
+    tmp_path: Path,
+) -> None:
+    service, product = _service(tmp_path)
+    unresolved_question_id = "pq_bbbbbbbbbbbbbbbbbbbbbbbb"
+    current = deepcopy(_resolved())
+    current["handoff_jti"] = "handoff-jti-missing-required"
+    current["questions"].append(
+        {
+            "question_id": unresolved_question_id,
+            "site_label": "当前居住地",
+            "canonical_field": "current_residence",
+            "suggested_profile_key": "current_residence",
+            "recommended_scope": "account",
+            "privacy": "standard",
+            "required": True,
+            "aliases": ["当前居住地"],
+            "bindings": [],
+        }
+    )
+    product.resolved = current
+
+    with pytest.raises(LocalHandoffError) as captured:
+        service.submit(
+            handoff_token="orahandoff-missing-required",
+            answers=[{"question_id": QUESTION_ID, "value": SENTINEL}],
+            origin="https://recruit.agentmesh360.com",
+        )
+
+    assert captured.value.code == "required_profile_answer_missing"
 
 
 @pytest.mark.parametrize(
@@ -785,8 +876,7 @@ def test_handoff_is_origin_bound_and_replay_is_idempotent(
 )
 def test_local_profile_database_permissions_are_private(tmp_path: Path) -> None:
     store = LocalProfileStore(tmp_path / "private-profile.sqlite3")
-    connection = store._connect()
-    try:
+    with store._connect() as connection:
         connection.execute("CREATE TABLE permission_probe (value TEXT)")
         connection.execute(
             "INSERT INTO permission_probe (value) VALUES ('synthetic')"
@@ -809,8 +899,6 @@ def test_local_profile_database_permissions_are_private(tmp_path: Path) -> None:
         assert {
             stat.S_IMODE(path.stat().st_mode) for path in database_files
         } == {0o600}
-    finally:
-        connection.close()
 
 
 @pytest.mark.skipif(
@@ -836,6 +924,49 @@ def test_local_profile_prepares_private_wal_files_before_connect(
         connection.execute("SELECT 1")
 
     assert observed_modes == {"-wal": 0o600, "-shm": 0o600}
+
+
+def test_local_profile_store_closes_every_sqlite_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def tracked_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        connection = original_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    store = LocalProfileStore(tmp_path / "private-profile.sqlite3")
+    store.create_extension_session(
+        installation_id=INSTALLATION_ID,
+        extension_origin=EXTENSION_ORIGIN,
+    )
+
+    assert len(opened) >= 2
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
+
+
+def test_local_profile_store_hides_sqlite_io_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failed_connect(*_args: object, **_kwargs: object) -> sqlite3.Connection:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(sqlite3, "connect", failed_connect)
+
+    with pytest.raises(LocalHandoffError) as captured:
+        LocalProfileStore(tmp_path / "private-profile.sqlite3")
+
+    assert captured.value.status == 503
+    assert captured.value.code == "local_profile_store_unavailable"
+    assert "本机资料库暂时无法访问" in captured.value.message
+    assert "disk I/O" not in captured.value.message
 
 
 def test_cascading_select_answer_maps_each_segment_to_platform_value() -> None:

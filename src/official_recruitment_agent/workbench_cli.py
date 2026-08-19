@@ -41,6 +41,7 @@ from official_recruitment_agent.workbench.profile_dimensions import (
     profile_dimension_catalog,
 )
 from official_recruitment_agent.local_profile_handoff import (
+    LOCAL_HANDOFF_CAPABILITIES,
     LOCAL_HANDOFF_URL,
     LocalHandoffError,
     LocalHandoffService,
@@ -642,11 +643,12 @@ def main(argv: list[str] | None = None) -> int:
                         pid_path.unlink()
                     except FileNotFoundError:
                         pass
-            result = (
-                _start_profile_handoff(args)
-                if args.profile_handoff_command == "start"
-                else _profile_handoff_status(args)
-            )
+            if args.profile_handoff_command == "start":
+                native_host = _ensure_native_messaging_host_ready()
+                result = _start_profile_handoff(args)
+                result["native_host"] = native_host
+            else:
+                result = _profile_handoff_status(args)
         elif args.command == "summary":
             result = _request(args, "GET", "/api/v1/workbench/summary")
         elif args.command == "list":
@@ -772,6 +774,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
+
+
+def _ensure_native_messaging_host_ready() -> dict[str, Any]:
+    current = native_messaging_host_status()
+    if current.get("ready") is True:
+        return current
+    return install_native_messaging_host(
+        extension_root=default_extension_root(),
+    )
 
 
 def _configure(args: argparse.Namespace) -> dict[str, Any]:
@@ -1129,6 +1140,27 @@ def _profile_handoff_status(
     return _query_local_handoff(args, workspace_ref)
 
 
+def _local_handoff_is_compatible(
+    status: dict[str, Any],
+    *,
+    expected_installation_id: str | None,
+) -> bool:
+    installation_matches = (
+        expected_installation_id is None
+        or status.get("extension_installation_id")
+        == expected_installation_id
+    )
+    capabilities = status.get("capabilities")
+    capability_set = (
+        {item for item in capabilities if isinstance(item, str)}
+        if isinstance(capabilities, list)
+        else set()
+    )
+    return installation_matches and set(
+        LOCAL_HANDOFF_CAPABILITIES
+    ).issubset(capability_set)
+
+
 def _start_profile_handoff(
     args: argparse.Namespace,
     *,
@@ -1144,10 +1176,9 @@ def _start_profile_handoff(
         current = _query_local_handoff(args, workspace_ref)
     except (HTTPError, URLError, OSError, ValueError):
         current = None
-    if current is not None and (
-        expected_installation_id is None
-        or current.get("extension_installation_id")
-        == expected_installation_id
+    if current is not None and _local_handoff_is_compatible(
+        current,
+        expected_installation_id=expected_installation_id,
     ):
         return {**current, "started": False, "already_running": True}
     if current is not None:
@@ -1193,6 +1224,11 @@ def _start_profile_handoff(
         time.sleep(0.1)
         try:
             status = _query_local_handoff(args, workspace_ref)
+            if not _local_handoff_is_compatible(
+                status,
+                expected_installation_id=expected_installation_id,
+            ):
+                continue
             return {
                 **status,
                 "started": True,

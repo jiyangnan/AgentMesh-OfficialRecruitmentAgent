@@ -11,10 +11,13 @@ import sqlite3
 import stat
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -32,6 +35,9 @@ LOCAL_HANDOFF_URL = f"http://{LOCAL_HANDOFF_HOST}:{LOCAL_HANDOFF_PORT}"
 MAX_REQUEST_BYTES = 256 * 1024
 PROPOSAL_TTL_SECONDS = 15 * 60
 LOCAL_EXTENSION_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+LOCAL_HANDOFF_CAPABILITIES = (
+    "resolved-required-answers-v1",
+)
 ALLOWED_WEB_ORIGINS = frozenset(
     {
         "https://recruit.agentmesh360.com",
@@ -105,6 +111,13 @@ class _RejectRedirects(HTTPRedirectHandler):
 def open_without_redirect(request: Request, *, timeout: float):
     """Open one exact URL; never forward credentials through a redirect."""
     return build_opener(_RejectRedirects()).open(request, timeout=timeout)
+
+
+def _installed_client_version() -> str:
+    try:
+        return version("official-recruitment-agent")
+    except PackageNotFoundError:
+        return "development"
 
 
 def default_local_profile_path(
@@ -204,16 +217,29 @@ class LocalProfileStore:
         self._secure_sqlite_files(create_database=True)
         self._create_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         # Pre-create SQLite sidecars privately so there is no readable window
         # between SQLite opening them and the post-connect permission repair.
         self._secure_sqlite_files(create_database=True, prepare_wal=True)
-        connection = sqlite3.connect(self.path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        self._secure_sqlite_files(create_database=False)
-        return connection
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(self.path, timeout=5)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            self._secure_sqlite_files(create_database=False)
+            with connection:
+                yield connection
+        except sqlite3.Error as error:
+            raise LocalHandoffError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "local_profile_store_unavailable",
+                "本机资料库暂时无法访问，请让 Agent 运行连接诊断。",
+            ) from error
+        finally:
+            if connection is not None:
+                connection.close()
 
     def _secure_sqlite_files(
         self,
@@ -426,7 +452,14 @@ class LocalProfileStore:
         resolved: dict[str, Any],
         answers: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        normalized = _normalize_answers(resolved, answers)
+        local_resolution = self.resolution_for(resolved)
+        normalized = _normalize_answers(
+            resolved,
+            answers,
+            already_resolved_question_ids=set(
+                local_resolution["resolved_question_ids"]
+            ),
+        )
         handoff_jti = str(resolved["handoff_jti"])
         with self._connect() as connection:
             existing = connection.execute(
@@ -760,6 +793,8 @@ class LocalProfileStore:
 def _normalize_answers(
     resolved: dict[str, Any],
     answers: list[dict[str, Any]],
+    *,
+    already_resolved_question_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     questions = {
         item["question_id"]: item
@@ -786,7 +821,10 @@ def _normalize_answers(
         for question_id, question in questions.items()
         if question.get("required") is True
     }
-    if not required_ids.issubset(set(answer_ids)):
+    satisfied_ids = set(answer_ids) | (
+        already_resolved_question_ids or set()
+    )
+    if not required_ids.issubset(satisfied_ids):
         raise LocalHandoffError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "required_profile_answer_missing",
@@ -1079,6 +1117,8 @@ class LocalHandoffService:
     def status(self, workspace_ref: str) -> dict[str, Any]:
         return {
             "contract_version": "local-profile-handoff-v1",
+            "client_version": _installed_client_version(),
+            "capabilities": list(LOCAL_HANDOFF_CAPABILITIES),
             "status": (
                 "ready"
                 if self.configured_workspace_ref == workspace_ref
