@@ -234,6 +234,51 @@ def test_unmanaged_source_checkout_does_not_contact_release_service(
     assert contacted is False
 
 
+def test_current_managed_client_still_updates_newer_zip_extension(
+    monkeypatch,
+    tmp_path: Path,
+    signed_manifest: dict[str, Any],
+) -> None:
+    root = _managed_root(tmp_path / "managed")
+    manifest = updates.verify_release_manifest(signed_manifest)
+    extension_updates: list[str] = []
+    monkeypatch.setattr(updates, "__version__", "0.1.13")
+    monkeypatch.setenv("ORA_TEST_MANAGED_RUNTIME", "1")
+    monkeypatch.setattr(
+        updates,
+        "fetch_release_manifest",
+        lambda **_kwargs: manifest,
+    )
+
+    def update_extension(release_manifest, *, opener):
+        del opener
+        extension_asset = next(
+            asset
+            for asset in release_manifest["assets"]
+            if asset["role"] == "extension_zip"
+        )
+        extension_updates.append(str(extension_asset["version"]))
+        return {
+            "status": "ready",
+            "changed": True,
+            "extension_version": extension_asset["version"],
+            "chrome_reload_required": True,
+        }
+
+    monkeypatch.setattr(
+        updates,
+        "_update_existing_zip_extension",
+        update_extension,
+    )
+
+    result = updates.check_for_update(root=root)
+
+    assert result["status"] == "extension_updated"
+    assert result["current_version"] == "0.1.13"
+    assert result["extension"]["chrome_reload_required"] is True
+    assert extension_updates == ["0.6.17"]
+
+
 def test_installer_finalization_migrates_legacy_data_and_switches_once(
     monkeypatch,
     tmp_path: Path,
