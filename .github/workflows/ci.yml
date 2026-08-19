@@ -50,6 +50,56 @@ jobs:
             --release-manifest dist/agentmesh-officialrecruitment-extension-release.json \
             --production
 
+      - name: 准备跨平台安装验收资产
+        run: |
+          mkdir -p ci-install-assets/downloads/agentmesh-officialrecruitment-skill
+          cp dist/official_recruitment_agent-*.whl \
+            ci-install-assets/downloads/official-recruitment-agent.whl
+          cp dist/agentmesh-officialrecruitment-extension.zip \
+            ci-install-assets/downloads/agentmesh-officialrecruitment-extension.zip
+          cp dist/agentmesh-officialrecruitment-extension-release.json \
+            ci-install-assets/downloads/agentmesh-officialrecruitment-extension-release.json
+          cp skills/agentmesh-officialrecruitment/SKILL.md \
+            ci-install-assets/downloads/agentmesh-officialrecruitment-skill/SKILL.md
+          cp installer/install-agent.sh installer/install-agent.ps1 \
+            ci-install-assets/
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          import re
+
+          root = Path("ci-install-assets")
+          powershell = (root / "install-agent.ps1").read_text(encoding="utf-8")
+          expected_adapter = re.search(
+              r'\$AdapterSha256 = "([0-9a-f]{64})"', powershell
+          )
+          expected_skill = re.search(
+              r'\$SkillSha256 = "([0-9a-f]{64})"', powershell
+          )
+          assert expected_adapter is not None
+          assert expected_skill is not None
+          actual_adapter = hashlib.sha256(
+              (root / "downloads" / "official-recruitment-agent.whl").read_bytes()
+          ).hexdigest()
+          actual_skill = hashlib.sha256(
+              (
+                  root
+                  / "downloads"
+                  / "agentmesh-officialrecruitment-skill"
+                  / "SKILL.md"
+              ).read_bytes()
+          ).hexdigest()
+          assert actual_adapter == expected_adapter.group(1)
+          assert actual_skill == expected_skill.group(1)
+          PY
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: public-install-assets
+          path: ci-install-assets
+          if-no-files-found: error
+          retention-days: 1
+
       - name: 拒绝私有服务端路径
         run: |
           test ! -e migrations
@@ -60,6 +110,7 @@ jobs:
   windows-client:
     name: Windows 客户端与 PowerShell
     runs-on: windows-latest
+    needs: test
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -74,6 +125,11 @@ jobs:
           python -m pip install -e ".[dev]"
           python -m compileall -q src tests
           python -m pytest
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: public-install-assets
+          path: ${{ runner.temp }}/site
 
       - name: 解析 PowerShell 安装器
         shell: pwsh
@@ -94,25 +150,6 @@ jobs:
         shell: pwsh
         run: |
           $Site = Join-Path $env:RUNNER_TEMP "site"
-          $Downloads = Join-Path $Site "downloads"
-          $SkillDownload = Join-Path $Downloads "agentmesh-officialrecruitment-skill"
-          New-Item -ItemType Directory -Force -Path $Downloads, $SkillDownload | Out-Null
-
-          python -m pip wheel --no-deps --wheel-dir $Downloads .
-          $Wheel = Get-ChildItem $Downloads -Filter "official_recruitment_agent-*.whl" |
-            Select-Object -First 1
-          if (-not $Wheel) {
-            throw "公开客户端 wheel 未生成。"
-          }
-          Copy-Item $Wheel.FullName (Join-Path $Downloads "official-recruitment-agent.whl")
-          Copy-Item `
-            "skills\agentmesh-officialrecruitment\SKILL.md" `
-            (Join-Path $SkillDownload "SKILL.md")
-          python scripts/package_extension.py `
-            --source extension `
-            --output (Join-Path $Downloads "agentmesh-officialrecruitment-extension.zip") `
-            --release-manifest (Join-Path $Downloads "agentmesh-officialrecruitment-extension-release.json") `
-            --production
 
           $Port = 18127
           $HttpServer = Start-Process python `
@@ -143,7 +180,7 @@ jobs:
             $env:ORA_AGENT_HOME = Join-Path $env:RUNNER_TEMP "ora-agent-home"
             $env:ORA_BIN_DIR = Join-Path $env:RUNNER_TEMP "ora-bin"
             $env:ORA_SKILLS_DIR = Join-Path $env:RUNNER_TEMP "ora-skills"
-            & (Resolve-Path "installer\install-agent.ps1")
+            & (Join-Path $Site "install-agent.ps1")
 
             $Current = Get-Content -Raw -Encoding UTF8 `
               (Join-Path $env:ORA_AGENT_HOME "current.json") |
