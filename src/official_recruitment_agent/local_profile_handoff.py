@@ -11,6 +11,8 @@ import sqlite3
 import stat
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -215,16 +217,29 @@ class LocalProfileStore:
         self._secure_sqlite_files(create_database=True)
         self._create_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         # Pre-create SQLite sidecars privately so there is no readable window
         # between SQLite opening them and the post-connect permission repair.
         self._secure_sqlite_files(create_database=True, prepare_wal=True)
-        connection = sqlite3.connect(self.path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        self._secure_sqlite_files(create_database=False)
-        return connection
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(self.path, timeout=5)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            self._secure_sqlite_files(create_database=False)
+            with connection:
+                yield connection
+        except sqlite3.Error as error:
+            raise LocalHandoffError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "local_profile_store_unavailable",
+                "本机资料库暂时无法访问，请让 Agent 运行连接诊断。",
+            ) from error
+        finally:
+            if connection is not None:
+                connection.close()
 
     def _secure_sqlite_files(
         self,
