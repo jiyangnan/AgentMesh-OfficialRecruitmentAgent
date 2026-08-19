@@ -19,6 +19,11 @@ from official_recruitment_agent.local_profile_migrations import (
 )
 
 
+OFFICIAL_RELEASES = (
+    "https://github.com/jiyangnan/AgentMesh-OfficialRecruitmentAgent/releases"
+)
+
+
 def _b64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -35,10 +40,7 @@ def _manifest(private_key: Ed25519PrivateKey) -> dict[str, Any]:
         "git_commit": "a" * 40,
         "artifact_sha256": wheel_sha,
         "published_at": "2026-08-19T00:00:00Z",
-        "notes_url": (
-            "https://github.com/jiyangnan/"
-            "AgentMesh-OfficialRecruitmentAgent/releases/tag/v0.6.17"
-        ),
+        "notes_url": f"{OFFICIAL_RELEASES}/tag/v0.6.17",
         "signature_algorithm": "Ed25519",
         "key_id": updates.RELEASE_SIGNING_KEY_ID,
         "assets": [
@@ -46,8 +48,7 @@ def _manifest(private_key: Ed25519PrivateKey) -> dict[str, Any]:
                 "role": "adapter_wheel",
                 "version": "0.1.13",
                 "url": (
-                    "https://github.com/jiyangnan/"
-                    "AgentMesh-OfficialRecruitmentAgent/releases/download/"
+                    f"{OFFICIAL_RELEASES}/download/"
                     "v0.6.17/official_recruitment_agent-0.1.13-"
                     "py3-none-any.whl"
                 ),
@@ -58,11 +59,7 @@ def _manifest(private_key: Ed25519PrivateKey) -> dict[str, Any]:
                 "role": "host_skill",
                 "version": "0.3.8",
                 "skill_version": "0.3.8",
-                "url": (
-                    "https://github.com/jiyangnan/"
-                    "AgentMesh-OfficialRecruitmentAgent/releases/download/"
-                    "v0.6.17/SKILL.md"
-                ),
+                "url": f"{OFFICIAL_RELEASES}/download/v0.6.17/SKILL.md",
                 "sha256": "2" * 64,
                 "bytes": 2345,
             },
@@ -70,8 +67,7 @@ def _manifest(private_key: Ed25519PrivateKey) -> dict[str, Any]:
                 "role": "extension_zip",
                 "version": "0.6.17",
                 "url": (
-                    "https://github.com/jiyangnan/"
-                    "AgentMesh-OfficialRecruitmentAgent/releases/download/"
+                    f"{OFFICIAL_RELEASES}/download/"
                     "v0.6.17/agentmesh-officialrecruitment-extension-"
                     "0.6.17.zip"
                 ),
@@ -486,11 +482,15 @@ def test_failed_switch_restores_pointer_native_manifest_and_database(
     pairing_state.parent.mkdir(parents=True, exist_ok=True)
     pairing_state.write_text("legacy pairing", encoding="utf-8")
     database = tmp_path / "private.sqlite3"
-    database.write_bytes(b"migrated")
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE release_state (value TEXT NOT NULL)")
+        connection.execute("INSERT INTO release_state VALUES ('migrated')")
     backup_dir = tmp_path / "backups"
     backup_dir.mkdir()
     backup = backup_dir / "private-schema-1.sqlite3"
-    backup.write_bytes(b"legacy database")
+    with sqlite3.connect(backup) as connection:
+        connection.execute("CREATE TABLE release_state (value TEXT NOT NULL)")
+        connection.execute("INSERT INTO release_state VALUES ('legacy database')")
     old_pointer = updates._read_json(updates.current_pointer_path(root))
     monkeypatch.setattr(updates, "__version__", "0.1.12")
     monkeypatch.setattr(updates, "_skill_targets", lambda: [skill_target])
@@ -562,5 +562,9 @@ def test_failed_switch_restores_pointer_native_manifest_and_database(
     assert skill_target.read_text(encoding="utf-8") == "legacy skill"
     assert native_manifest.read_text(encoding="utf-8") == "legacy native"
     assert pairing_state.read_text(encoding="utf-8") == "legacy pairing"
-    assert database.read_bytes() == b"legacy database"
+    with sqlite3.connect(database) as connection:
+        restored = connection.execute(
+            "SELECT value FROM release_state"
+        ).fetchone()
+    assert restored == ("legacy database",)
     assert not (root / "releases" / "0.1.13").exists()

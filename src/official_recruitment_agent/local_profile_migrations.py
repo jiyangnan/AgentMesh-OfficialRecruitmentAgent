@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -158,17 +157,27 @@ def _backup_database(
 
 
 def _restore_backup(path: Path, backup_path: Path) -> None:
-    for sidecar in (
-        Path(f"{path}-wal"),
-        Path(f"{path}-shm"),
-        Path(f"{path}-journal"),
-    ):
-        sidecar.unlink(missing_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid4().hex}.restore")
-    shutil.copy2(backup_path, temporary)
+    source = sqlite3.connect(
+        f"file:{backup_path.as_posix()}?mode=ro",
+        uri=True,
+        timeout=30,
+    )
+    destination = sqlite3.connect(path, timeout=30)
+    try:
+        source.backup(destination)
+        destination.commit()
+        destination.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        integrity = destination.execute("PRAGMA integrity_check").fetchone()
+        if integrity is None or str(integrity[0]).casefold() != "ok":
+            raise LocalProfileMigrationError(
+                "local_profile_restore_integrity_failed",
+                "本机资料库恢复后完整性检查失败，已停止使用该资料库。",
+            )
+    finally:
+        destination.close()
+        source.close()
     if os.name != "nt":
-        temporary.chmod(0o600)
-    os.replace(temporary, path)
+        path.chmod(0o600)
 
 
 def restore_local_profile_database(path: Path, backup_path: Path) -> None:
