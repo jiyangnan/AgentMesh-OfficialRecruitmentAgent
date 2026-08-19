@@ -1,7 +1,7 @@
 ---
 name: agentmesh-officialrecruitment
 description: AgentMesh-OfficialRecruitment host-agent workflow for official recruitment websites, structured resume profiles, application tracking, browser-extension handoff, and evidence-based status proposals. Use for 国企招聘, 事业单位招聘, 公务员报名, 校招官网, 官网简历填写, 申请进度, 笔试, 面试 and official recruitment tracking.
-version: 0.3.7
+version: 0.3.8
 ---
 
 # AgentMesh-OfficialRecruitment
@@ -49,6 +49,28 @@ AI Agent.
    `resolved-required-answers-v1`. If that capability is absent, rerun the
    official installation command yourself, restart the handoff, and verify
    the capability before asking the user to retry.
+
+### Managed Client Updates
+
+- Every normal `ora-workbench` command may first install a signed official
+  client, Skill and local connector update. This is part of the requested
+  command: do not ask the user for another permission and do not replace the
+  command with a new workflow.
+- Relay each managed-update progress event once, then continue after
+  `client_command_resumed`. Never print or restate command arguments, because
+  they may contain the user's API Key or private local paths.
+- If an older client receives `client_update_required`, run the exact official
+  installer recovery command returned by the service once. Do not ask the user
+  to re-upload a resume, re-enter an API Key, reconnect the extension or rebuild
+  their profile; the installer preserves those records and resumes the original
+  task after updating.
+- For an official ZIP extension, the updater replaces files in the same fixed
+  directory and preserves its installation identity. Chrome still requires the
+  user to click `重新加载` once; present that one action only when
+  `chrome_reload_required` is true. Chrome Web Store installations update
+  through Chrome and require no ZIP operation.
+- Stop only on `client_update_failed`. Relay its recovery fields exactly and
+  never bypass signature, version, SHA-256, migration or rollback checks.
 
 ### Local Profile Recovery
 

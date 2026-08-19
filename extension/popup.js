@@ -19,6 +19,8 @@ const ACTIVE_SESSION_STORAGE_KEY = "ora_active_assist_session_v1";
 const PENDING_EVIDENCE_STORAGE_KEY = "ora_pending_execution_evidence_v1";
 const AUTO_CONNECT_DISABLED_STORAGE_KEY =
   "ora_local_auto_connect_disabled_v1";
+const EXTENSION_STORAGE_SCHEMA_KEY = "ora_storage_schema_v1";
+const EXTENSION_STORAGE_SCHEMA_VERSION = 1;
 const LOCAL_AGENT_URL = "http://127.0.0.1:8765";
 const INSTALLATION_DESCRIPTOR_FILE = "agentmesh-installation.json";
 const NATIVE_MESSAGING_HOST = "com.agentmesh360.officialrecruitment";
@@ -873,6 +875,18 @@ function restoreTaskUi(task) {
 }
 
 async function restorePopupState() {
+  try {
+    await migrateExtensionStorage();
+  } catch (error) {
+    connectedUi(false);
+    showMessage(
+      error instanceof Error
+        ? error.message
+        : "扩展本地数据升级失败，请让 Agent 更新或修复扩展。",
+      true,
+    );
+    return;
+  }
   await restoreConnection();
   if (!currentServer) return;
   try {
@@ -889,6 +903,32 @@ async function restorePopupState() {
     }
   } catch {
     // Connection remains usable; the user can explicitly inspect the page.
+  }
+}
+
+async function migrateExtensionStorage() {
+  const stored = await chrome.storage.local.get(
+    EXTENSION_STORAGE_SCHEMA_KEY,
+  );
+  const marker = stored?.[EXTENSION_STORAGE_SCHEMA_KEY];
+  if (marker === undefined) {
+    await chrome.storage.local.set({
+      [EXTENSION_STORAGE_SCHEMA_KEY]: {
+        schema_version: EXTENSION_STORAGE_SCHEMA_VERSION,
+      },
+    });
+    return;
+  }
+  const version = marker?.schema_version;
+  if (!Number.isInteger(version) || version < 1) {
+    throw new Error(
+      "扩展本地数据版本记录无效。请让 Agent 运行 extension repair，现有数据不会被清除。",
+    );
+  }
+  if (version > EXTENSION_STORAGE_SCHEMA_VERSION) {
+    throw new Error(
+      "当前扩展版本低于本机数据版本。请先更新扩展，现有数据不会被降级或清除。",
+    );
   }
 }
 

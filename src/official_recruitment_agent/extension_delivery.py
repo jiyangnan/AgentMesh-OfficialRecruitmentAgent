@@ -503,9 +503,27 @@ def prepare_extension(
     extension_root: Path | None = None,
     force: bool = False,
     opener: Callable[..., Any] = urlopen,
+    expected_version: str | None = None,
+    expected_sha256: str | None = None,
+    expected_bytes: int | None = None,
 ) -> dict[str, Any]:
     root = (extension_root or default_extension_root()).expanduser()
     release = fetch_extension_release(base_url, opener=opener)
+    if (
+        expected_version is not None
+        and release["extension_version"] != expected_version
+    ):
+        raise ExtensionDeliveryError("扩展版本与签名客户端清单不一致。")
+    if (
+        expected_sha256 is not None
+        and release["artifact_sha256"] != expected_sha256
+    ):
+        raise ExtensionDeliveryError("扩展摘要与签名客户端清单不一致。")
+    if (
+        expected_bytes is not None
+        and release["artifact_bytes"] != expected_bytes
+    ):
+        raise ExtensionDeliveryError("扩展大小与签名客户端清单不一致。")
     current = extension_status(root)
     pairing = _existing_extension_pairing(root)
     if (
