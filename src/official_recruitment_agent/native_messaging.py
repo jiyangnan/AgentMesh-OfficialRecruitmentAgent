@@ -8,7 +8,7 @@ import subprocess
 import sys
 from typing import Any, BinaryIO, Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from official_recruitment_agent.extension_delivery import (
     default_extension_root,
@@ -30,6 +30,14 @@ MAX_NATIVE_MESSAGE_BYTES = 64 * 1024
 
 class NativeMessagingError(RuntimeError):
     pass
+
+
+class NativeAgentUnavailableError(NativeMessagingError):
+    pass
+
+
+def _open_loopback_without_proxy(request: Request, timeout: int):
+    return build_opener(ProxyHandler({})).open(request, timeout=timeout)
 
 
 def native_host_executable() -> Path:
@@ -284,7 +292,7 @@ def _start_local_agent(
 def _connect_local_agent(
     origin: str,
     *,
-    opener: Callable[..., Any] = urlopen,
+    opener: Callable[..., Any] = _open_loopback_without_proxy,
 ) -> dict[str, Any]:
     pairing = load_private_extension_pairing(default_extension_root())
     request = Request(
@@ -314,9 +322,13 @@ def _connect_local_agent(
         raise NativeMessagingError(
             message or "本机 Agent 拒绝了浏览器连接。"
         ) from exc
-    except (OSError, URLError, json.JSONDecodeError) as exc:
-        raise NativeMessagingError(
+    except (OSError, URLError) as exc:
+        raise NativeAgentUnavailableError(
             "本机 Agent 已启动，但浏览器连接失败，请运行连接诊断。"
+        ) from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise NativeMessagingError(
+            "本机 Agent 返回了无效的浏览器连接。"
         ) from exc
     if not isinstance(result, dict) or result.get("status") != "connected":
         raise NativeMessagingError("本机 Agent 返回了无效的浏览器连接。")
@@ -328,7 +340,7 @@ def handle_native_message(
     *,
     origin: str,
     runner: Callable[..., Any] = subprocess.run,
-    opener: Callable[..., Any] = urlopen,
+    opener: Callable[..., Any] = _open_loopback_without_proxy,
 ) -> dict[str, Any]:
     normalized_origin = origin.rstrip("/")
     if normalized_origin != OFFICIAL_CHROME_EXTENSION_ORIGIN:
@@ -338,8 +350,11 @@ def handle_native_message(
         "action": "connect",
     }:
         raise NativeMessagingError("浏览器请求的本机动作不受支持。")
-    _start_local_agent(runner=runner)
-    return _connect_local_agent(normalized_origin, opener=opener)
+    try:
+        return _connect_local_agent(normalized_origin, opener=opener)
+    except NativeAgentUnavailableError:
+        _start_local_agent(runner=runner)
+        return _connect_local_agent(normalized_origin, opener=opener)
 
 
 def main() -> int:

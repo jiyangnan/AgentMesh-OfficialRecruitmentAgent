@@ -16,6 +16,7 @@ from official_recruitment_agent.extension_identity import (
 )
 from official_recruitment_agent.native_messaging import (
     NativeMessagingError,
+    _open_loopback_without_proxy,
     _read_message,
     _write_message,
     handle_native_message,
@@ -223,6 +224,140 @@ def test_native_bridge_connects_without_returning_pairing_secret(
         "installation_id": pairing["installation_id"],
         "pairing_secret": pairing["pairing_secret"],
     }
+
+
+def test_native_bridge_uses_running_local_agent_before_starting_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pairing = {
+        "schema_version": 1,
+        "installation_id": f"orainstall_{'b' * 32}",
+        "pairing_secret": f"orapair_{'c' * 43}",
+        "local_agent_url": "http://127.0.0.1:8765",
+    }
+    monkeypatch.setattr(
+        native_module,
+        "default_extension_root",
+        lambda: tmp_path / "extension",
+    )
+    monkeypatch.setattr(
+        native_module,
+        "load_private_extension_pairing",
+        lambda _root: pairing,
+    )
+
+    def runner(*_args, **_kwargs):
+        raise AssertionError("running local Agent must not require CLI startup")
+
+    result = handle_native_message(
+        {
+            "contract_version": "officialrecruitment-native-v1",
+            "action": "connect",
+        },
+        origin=f"{OFFICIAL_CHROME_EXTENSION_ORIGIN}/",
+        runner=runner,
+        opener=lambda _request, timeout: _Response(
+            {
+                "status": "connected",
+                "installation_id": pairing["installation_id"],
+                "session_token": f"oralocalsession_{'d' * 43}",
+                "server_url": "https://recruit.agentmesh360.com",
+                "expires_at": "2099-01-01T00:00:00Z",
+            }
+        ),
+    )
+
+    assert result["status"] == "connected"
+
+
+def test_native_bridge_starts_local_agent_then_retries_loopback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = tmp_path / "ora-workbench"
+    cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    pairing = {
+        "schema_version": 1,
+        "installation_id": f"orainstall_{'b' * 32}",
+        "pairing_secret": f"orapair_{'c' * 43}",
+        "local_agent_url": "http://127.0.0.1:8765",
+    }
+    monkeypatch.setattr(native_module, "_cli_executable", lambda: cli)
+    monkeypatch.setattr(
+        native_module,
+        "default_extension_root",
+        lambda: tmp_path / "extension",
+    )
+    monkeypatch.setattr(
+        native_module,
+        "load_private_extension_pairing",
+        lambda _root: pairing,
+    )
+    attempts = 0
+    starts = 0
+
+    def opener(_request, timeout):
+        nonlocal attempts
+        assert timeout == 5
+        attempts += 1
+        if attempts == 1:
+            raise native_module.URLError("connection refused")
+        return _Response(
+            {
+                "status": "connected",
+                "installation_id": pairing["installation_id"],
+                "session_token": f"oralocalsession_{'d' * 43}",
+                "server_url": "https://recruit.agentmesh360.com",
+                "expires_at": "2099-01-01T00:00:00Z",
+            }
+        )
+
+    def runner(*_args, **_kwargs):
+        nonlocal starts
+        starts += 1
+        return _Completed()
+
+    result = handle_native_message(
+        {
+            "contract_version": "officialrecruitment-native-v1",
+            "action": "connect",
+        },
+        origin=f"{OFFICIAL_CHROME_EXTENSION_ORIGIN}/",
+        runner=runner,
+        opener=opener,
+    )
+
+    assert result["status"] == "connected"
+    assert attempts == 2
+    assert starts == 1
+
+
+def test_loopback_opener_disables_proxy_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_handlers = []
+
+    class _Opener:
+        def open(self, request, timeout):
+            assert request.full_url == "http://127.0.0.1:8765/status"
+            assert timeout == 5
+            return "opened"
+
+    def fake_build_opener(*handlers):
+        captured_handlers.extend(handlers)
+        return _Opener()
+
+    monkeypatch.setattr(native_module, "build_opener", fake_build_opener)
+
+    result = _open_loopback_without_proxy(
+        native_module.Request("http://127.0.0.1:8765/status"),
+        5,
+    )
+
+    assert result == "opened"
+    assert len(captured_handlers) == 1
+    assert captured_handlers[0].proxies == {}
 
 
 @pytest.mark.skipif(
