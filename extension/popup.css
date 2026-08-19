@@ -1,4 +1,8 @@
 :root {
+  width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+  overflow-x: hidden;
   font-family:
     Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   color: #17201e;
@@ -11,7 +15,49 @@
 
 body {
   width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
   margin: 0;
+  overflow-x: hidden;
+  contain: inline-size;
+}
+
+body:has(#review:not([hidden])) {
+  height: 600px;
+  max-height: 600px;
+  overflow-y: hidden;
+}
+
+body:has(#review:not([hidden])) > header {
+  flex: none;
+}
+
+body:has(#review:not([hidden])) > main {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+body:has(#review:not([hidden])) #assist,
+body:has(#review:not([hidden])) #message,
+body:has(#review:not([hidden])) .popup-footer {
+  flex: none;
+}
+
+body:has(#review:not([hidden])) #review {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+#review[hidden] {
+  display: none;
 }
 
 header {
@@ -324,12 +370,21 @@ button:disabled {
 }
 
 .field-list {
+  width: 100%;
+  max-width: 100%;
   max-height: 190px;
   margin-top: 12px;
+  overflow-x: hidden;
   overflow-y: auto;
   background: #fff;
   border: 1px solid #d9dfdb;
   border-radius: 6px;
+}
+
+body:has(#review:not([hidden])) .field-list {
+  min-height: 0;
+  flex: 1;
+  max-height: none;
 }
 
 .execution-issues {
@@ -375,6 +430,9 @@ button:disabled {
 }
 
 .field-row {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(90px, 0.8fr);
   gap: 10px;
@@ -391,6 +449,11 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.field-row > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .field-row strong,
