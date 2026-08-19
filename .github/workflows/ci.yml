@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  SOURCE_DATE_EPOCH: "946684800"
+  PYTHONHASHSEED: "0"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -141,7 +145,10 @@ jobs:
             $env:ORA_SKILLS_DIR = Join-Path $env:RUNNER_TEMP "ora-skills"
             & (Resolve-Path "installer\install-agent.ps1")
 
-            $Cli = Join-Path $env:ORA_AGENT_HOME "venv\Scripts\ora-workbench.exe"
+            $Current = Get-Content -Raw -Encoding UTF8 `
+              (Join-Path $env:ORA_AGENT_HOME "current.json") |
+              ConvertFrom-Json
+            $Cli = $Current.cli_path
             $ExtensionDir = Join-Path $env:LOCALAPPDATA `
               "AgentMesh360\OfficialRecruitment\extension-ci"
             if (-not (Test-Path $Cli)) {

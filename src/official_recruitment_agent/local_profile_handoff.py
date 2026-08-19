@@ -27,6 +27,10 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from official_recruitment_agent.extension_identity import (
     OFFICIAL_CHROME_EXTENSION_ORIGIN,
 )
+from official_recruitment_agent.local_profile_migrations import (
+    LocalProfileMigrationError,
+    migrate_local_profile_database,
+)
 
 
 LOCAL_HANDOFF_HOST = "127.0.0.1"
@@ -215,7 +219,18 @@ class LocalProfileStore:
         self.path = path.expanduser()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._secure_sqlite_files(create_database=True)
-        self._create_schema()
+        try:
+            self.migration_report = migrate_local_profile_database(
+                self.path,
+                client_version=_installed_client_version(),
+            )
+        except LocalProfileMigrationError as error:
+            raise LocalHandoffError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                error.code,
+                str(error),
+            ) from error
+        self._secure_sqlite_files(create_database=True)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -255,67 +270,6 @@ class LocalProfileStore:
         )
         for path, create in paths:
             _secure_private_file(path, create=create)
-
-    def _create_schema(self) -> None:
-        with self._connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS profile_handoff_proposals (
-                    proposal_id TEXT PRIMARY KEY,
-                    workspace_ref TEXT NOT NULL,
-                    fill_task_id TEXT NOT NULL,
-                    interaction_id TEXT NOT NULL,
-                    handoff_jti TEXT NOT NULL UNIQUE,
-                    status TEXT NOT NULL,
-                    answers_json TEXT NOT NULL,
-                    questions_json TEXT NOT NULL,
-                    proposal_capability TEXT NOT NULL,
-                    proposal_capability_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at_epoch INTEGER NOT NULL,
-                    confirmed_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS local_profile_facts (
-                    fact_id TEXT PRIMARY KEY,
-                    workspace_ref TEXT NOT NULL,
-                    canonical_key TEXT NOT NULL,
-                    label TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    scope_ref TEXT NOT NULL,
-                    privacy TEXT NOT NULL,
-                    aliases_json TEXT NOT NULL,
-                    source_question_id TEXT NOT NULL,
-                    source_site_domain TEXT,
-                    source_application_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE (
-                        workspace_ref,
-                        canonical_key,
-                        scope,
-                        scope_ref
-                    )
-                );
-                CREATE TABLE IF NOT EXISTS extension_local_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    installation_id TEXT NOT NULL,
-                    extension_origin TEXT NOT NULL,
-                    token_hash TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL,
-                    expires_at_epoch INTEGER NOT NULL,
-                    revoked_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS
-                    idx_extension_local_sessions_installation
-                ON extension_local_sessions (
-                    installation_id,
-                    extension_origin,
-                    revoked_at
-                );
-                """
-            )
-        self._secure_sqlite_files(create_database=True)
 
     def create_extension_session(
         self,
@@ -1060,6 +1014,11 @@ class ProductClient:
             "Accept": "application/json",
             "X-ORA-Actor": self.actor_id,
             "X-ORA-Surface": "mcp",
+            "User-Agent": (
+                "official-recruitment-agent/"
+                + _installed_client_version()
+            ),
+            "X-ORA-Client-Version": _installed_client_version(),
         }
         if not local_product:
             headers["Authorization"] = f"Bearer {self.api_key}"

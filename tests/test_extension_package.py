@@ -121,10 +121,14 @@ def test_installer_uses_stable_assets_without_credentials() -> None:
         in installer
     )
     assert f'ADAPTER_VERSION="{adapter_version}"' in installer
-    assert 'extension host install' in installer
+    assert 'install-finalize' in installer
+    assert 'RELEASE_ROOT="$INSTALL_ROOT/releases/$ADAPTER_VERSION"' in installer
+    assert "__ORA_ADAPTER_SHA256__" not in installer
+    assert "__ORA_SKILL_SHA256__" not in installer
     assert '"$VENV/bin/python" -m pip install' in installer
     assert "AGENTMESH_API_KEY=" not in installer
     assert "jobagent_live_" not in installer
+    assert '版本：${ADAPTER_VERSION}；Skill：${SKILL_VERSION}' in installer
 
 
 def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
@@ -138,15 +142,15 @@ def test_windows_installer_uses_native_paths_and_valid_wheel_name() -> None:
     assert "Scripts\\ora-workbench.exe" in installer
     assert "ora-workbench.cmd" in installer
     assert f'$AdapterVersion = "{adapter_version}"' in installer
-    assert 'extension host install' in installer
+    assert 'install-finalize' in installer
+    assert '"releases\\$AdapterVersion"' in installer
+    assert "__ORA_ADAPTER_SHA256__" not in installer
+    assert "__ORA_SKILL_SHA256__" not in installer
     assert (
         'official_recruitment_agent-$AdapterVersion-py3-none-any.whl'
         in installer
     )
     assert "New-Item -ItemType SymbolicLink" not in installer
-    assert (
-        '$_.Trim() -eq "name: agentmesh-officialrecruitment"'
-        in installer
-    )
+    assert "name: agentmesh-officialrecruitment" in installer
     assert "AGENTMESH_API_KEY=" not in installer
     assert "jobagent_live_" not in installer

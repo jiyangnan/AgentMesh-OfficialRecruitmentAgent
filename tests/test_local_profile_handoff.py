@@ -218,6 +218,10 @@ def test_product_client_identifies_local_agent_surface(
     assert request.headers["X-ora-surface"] == "mcp"
     assert request.headers["X-ora-account"] == "acct-local-uat"
     assert request.headers["X-ora-actor"] == "host-agent-uat"
+    assert request.headers["X-ora-client-version"]
+    assert request.headers["User-agent"].startswith(
+        "official-recruitment-agent/"
+    )
 
 
 def test_product_client_sends_api_key_only_to_https_product_service(

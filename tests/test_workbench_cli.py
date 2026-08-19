@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.error import HTTPError
 
 import official_recruitment_agent.workbench_cli as cli_module
 import pytest
@@ -98,7 +99,174 @@ def test_production_cli_sends_universal_key_without_spoofable_surface(
     assert request.headers["Authorization"] == (
         "Bearer agentmesh_live_test-key"
     )
+    assert request.headers["X-ora-client-version"] == cli_module.__version__
+    assert request.headers["User-agent"] == (
+        f"official-recruitment-agent/{cli_module.__version__}"
+    )
     assert "X-ora-surface" not in request.headers
+
+
+def test_historical_client_relays_machine_readable_update_handoff_without_key(
+    monkeypatch,
+    capsys,
+) -> None:
+    payload = {
+        "error": {
+            "code": "client_update_required",
+            "message": "当前 CLI 需要先更新。",
+            "details": {
+                "request_preserved": True,
+                "local_data_preserved": True,
+                "recovery_commands": {
+                    "macos_linux": (
+                        "curl -fsSL https://recruit.agentmesh360.com/"
+                        "install-agent.sh | sh"
+                    ),
+                    "windows_powershell": (
+                        "powershell -NoProfile -ExecutionPolicy Bypass "
+                        "-Command \"irm https://recruit.agentmesh360.com/"
+                        "install-agent.ps1 | iex\""
+                    ),
+                },
+            },
+        }
+    }
+
+    def reject_old_client(request, timeout):
+        del timeout
+        assert "agentmesh_live_private-value" in request.headers[
+            "Authorization"
+        ]
+        raise HTTPError(
+            request.full_url,
+            426,
+            "Upgrade Required",
+            {},
+            io.BytesIO(json.dumps(payload).encode("utf-8")),
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "check_for_update",
+        lambda **_kwargs: {
+            "status": "unmanaged",
+            "current_version": cli_module.__version__,
+        },
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "open_without_redirect",
+        reject_old_client,
+    )
+
+    code = cli_module.main(
+        [
+            "--base-url",
+            "https://recruit.agentmesh360.com",
+            "--api-key",
+            "agentmesh_live_private-value",
+            "summary",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    result = json.loads(output)
+    assert code == 2
+    assert result == payload
+    assert "install-agent.sh" in output
+    assert "install-agent.ps1" in output
+    assert "agentmesh_live_private-value" not in output
+
+
+def test_auto_update_resumes_original_command_without_logging_secret_args(
+    monkeypatch,
+) -> None:
+    args = cli_module.build_parser().parse_args(
+        [
+            "--api-key",
+            "agentmesh_live_must-not-appear-in-event",
+            "summary",
+        ]
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "check_for_update",
+        lambda **_kwargs: {
+            "status": "updated",
+            "from_version": "0.1.12",
+            "to_version": "0.1.13",
+            "new_cli_path": "/synthetic/new/ora-workbench",
+        },
+    )
+    executed = None
+
+    class ExecCalled(RuntimeError):
+        pass
+
+    def fake_execv(path, argv):
+        nonlocal executed
+        executed = (path, argv)
+        raise ExecCalled
+
+    monkeypatch.setattr(cli_module.os, "execv", fake_execv)
+
+    with pytest.raises(ExecCalled):
+        cli_module._maybe_auto_update(
+            args,
+            [
+                "--api-key",
+                "agentmesh_live_must-not-appear-in-event",
+                "summary",
+            ],
+        )
+
+    assert executed == (
+        "/synthetic/new/ora-workbench",
+        [
+            "/synthetic/new/ora-workbench",
+            "--api-key",
+            "agentmesh_live_must-not-appear-in-event",
+            "summary",
+        ],
+    )
+    resume = json.loads(os.environ[cli_module.UPDATE_RESUME_ENV])
+    assert resume["command"] == "ora-workbench summary"
+    assert "agentmesh_live" not in json.dumps(resume)
+    monkeypatch.delenv(cli_module.UPDATE_RESUME_ENV, raising=False)
+
+
+def test_update_resume_notice_is_emitted_once(
+    monkeypatch,
+    capsys,
+) -> None:
+    args = cli_module.build_parser().parse_args(["summary"])
+    monkeypatch.setenv(
+        cli_module.UPDATE_RESUME_ENV,
+        json.dumps(
+            {
+                "from_version": "0.1.12",
+                "to_version": "0.1.13",
+                "command": "ora-workbench summary",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "check_for_update",
+        lambda **_kwargs: {
+            "status": "current",
+            "current_version": "0.1.13",
+        },
+    )
+
+    cli_module._maybe_auto_update(args, ["summary"])
+    first = capsys.readouterr().err.strip().splitlines()
+    cli_module._maybe_auto_update(args, ["summary"])
+    second = capsys.readouterr().err.strip()
+
+    assert len(first) == 1
+    assert json.loads(first[0])["stage"] == "client_command_resumed"
+    assert second == ""
 
 
 def test_local_cli_never_sends_configured_api_key(
@@ -758,6 +926,7 @@ def test_host_agent_can_start_local_profile_handoff_without_user_shell_work(
         calls.append(args.profile_handoff_command)
         return {
             "status": "ready",
+            "client_version": cli_module.__version__,
             "workspace_match": True,
             "answer_residency": "local_device",
             "started": True,
@@ -859,6 +1028,7 @@ def test_handoff_start_validates_cloud_once_then_polls_only_loopback(
             raise cli_module.URLError("service not running")
         return {
             "status": "ready",
+            "client_version": cli_module.__version__,
             "workspace_match": True,
             "answer_residency": "local_device",
             "capabilities": ["resolved-required-answers-v1"],
@@ -968,6 +1138,7 @@ def test_local_handoff_child_starts_without_key_and_scrubs_parent_key(
             raise OSError("not running")
         return {
             "status": "ready",
+            "client_version": cli_module.__version__,
             "extension_installation_id": f"orainstall_{'a' * 32}",
             "capabilities": ["resolved-required-answers-v1"],
         }
@@ -1037,6 +1208,7 @@ def test_extension_update_restarts_outdated_local_handoff(
             }
         return {
             "status": "ready",
+            "client_version": cli_module.__version__,
             "workspace_match": True,
             "extension_connection_supported": True,
             "extension_installation_id": installation_id,
@@ -1085,7 +1257,7 @@ def test_extension_update_restarts_outdated_local_handoff(
     assert calls == {"query": 2, "stop": 1, "spawn": 1}
 
 
-def test_client_update_restarts_same_extension_identity_without_capability(
+def test_client_update_restarts_old_handoff_even_when_capabilities_match(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1109,12 +1281,15 @@ def test_client_update_restarts_same_extension_identity_without_capability(
         if calls["query"] == 1:
             return {
                 "status": "ready",
+                "client_version": "0.1.12",
                 "workspace_match": True,
                 "extension_connection_supported": True,
                 "extension_installation_id": installation_id,
+                "capabilities": ["resolved-required-answers-v1"],
             }
         return {
             "status": "ready",
+            "client_version": cli_module.__version__,
             "workspace_match": True,
             "extension_connection_supported": True,
             "extension_installation_id": installation_id,

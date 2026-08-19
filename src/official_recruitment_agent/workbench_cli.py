@@ -16,6 +16,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from official_recruitment_agent import __version__
 from official_recruitment_agent.extension_delivery import (
     ExtensionDeliveryError,
     default_extension_root,
@@ -52,6 +53,13 @@ from official_recruitment_agent.local_profile_handoff import (
     is_local_product_url,
     open_without_redirect,
     serve_local_handoff,
+)
+from official_recruitment_agent.release_update import (
+    UPDATE_RESUME_ENV,
+    ClientUpdateError,
+    check_for_update,
+    finalize_managed_install,
+    managed_update_failure,
 )
 
 
@@ -368,6 +376,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="供宿主 Agent 调用的官网招聘工作台 CLI 适配器",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ora-workbench {__version__}",
+    )
+    parser.add_argument(
         "--base-url",
         default=(
             os.getenv("ORA_WORKBENCH_URL")
@@ -402,6 +415,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="AgentMesh360 通用 API Key",
     )
     subparsers.add_parser("doctor")
+    subparsers.add_parser(
+        "update",
+        help="检查 AgentMesh360 签名的正式客户端版本",
+    )
+    subparsers.add_parser(
+        "upgrade-check",
+        help="验证升级后的本机资料与连接兼容性",
+    )
+    install_finalize = subparsers.add_parser(
+        "install-finalize",
+        help=argparse.SUPPRESS,
+    )
+    install_finalize.add_argument(
+        "--skill-file",
+        type=Path,
+        required=True,
+    )
     subparsers.add_parser("extension-setup")
     extension = subparsers.add_parser("extension")
     extension_commands = extension.add_subparsers(
@@ -533,9 +563,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     _ensure_utf8_standard_streams()
-    args = build_parser().parse_args(argv)
+    raw_argv = list(argv if argv is not None else sys.argv[1:])
+    args = build_parser().parse_args(raw_argv)
     try:
-        if args.command == "configure":
+        _maybe_auto_update(args, raw_argv)
+        if args.command == "update":
+            result = check_for_update(
+                auto_apply=False,
+                force=True,
+            )
+        elif args.command == "upgrade-check":
+            result = _upgrade_check()
+        elif args.command == "install-finalize":
+            result = finalize_managed_install(args.skill_file)
+        elif args.command == "configure":
             result = _configure(args)
         elif args.command == "doctor":
             result = _doctor(args)
@@ -763,6 +804,15 @@ def main(argv: list[str] | None = None) -> int:
                         "confirmation_code": args.confirmation_code,
                     },
                 )
+    except ClientUpdateError as error:
+        print(
+            json.dumps(
+                managed_update_failure(error),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 3
     except (HTTPError, URLError, OSError, ValueError) as error:
         print(
             json.dumps(
@@ -774,6 +824,102 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
+
+
+def _emit_update_event(stage: str, **details: Any) -> None:
+    print(
+        json.dumps(
+            {"stage": stage, **details},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _command_label(args: argparse.Namespace) -> str:
+    parts = ["ora-workbench", str(args.command)]
+    for attribute in (
+        "extension_command",
+        "extension_host_command",
+        "profile_handoff_command",
+        "data_command",
+    ):
+        value = getattr(args, attribute, None)
+        if isinstance(value, str) and value:
+            parts.append(value)
+    return " ".join(parts)
+
+
+def _maybe_auto_update(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
+    resume_raw = os.environ.pop(UPDATE_RESUME_ENV, None)
+    if resume_raw:
+        try:
+            resume = json.loads(resume_raw)
+        except json.JSONDecodeError:
+            resume = None
+        if isinstance(resume, dict) and all(
+            isinstance(resume.get(key), str) and resume[key]
+            for key in ("from_version", "to_version", "command")
+        ):
+            _emit_update_event(
+                "client_command_resumed",
+                from_version=resume["from_version"],
+                to_version=resume["to_version"],
+                command=resume["command"],
+                message="已使用新版继续执行原命令。",
+            )
+    if args.command in {"update", "upgrade-check", "install-finalize"}:
+        return
+    if (
+        args.command == "profile-handoff"
+        and args.profile_handoff_command == "serve"
+    ):
+        return
+    result = check_for_update(
+        auto_apply=True,
+        on_event=_emit_update_event,
+    )
+    if result.get("status") not in {
+        "updated",
+        "updated_extension_pending",
+    }:
+        return
+    os.environ[UPDATE_RESUME_ENV] = json.dumps(
+        {
+            "from_version": result["from_version"],
+            "to_version": result["to_version"],
+            "command": _command_label(args),
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    new_cli = str(result["new_cli_path"])
+    os.execv(new_cli, [new_cli, *raw_argv])
+
+
+def _upgrade_check() -> dict[str, Any]:
+    store = LocalProfileStore(default_local_profile_path())
+    extension = extension_status(default_extension_root())
+    native_host = native_messaging_host_status()
+    return {
+        "status": "ready",
+        "client_version": __version__,
+        "local_profile": store.migration_report,
+        "extension": {
+            "status": extension.get("status"),
+            "healthy": extension.get("healthy"),
+            "extension_version": extension.get("extension_version"),
+        },
+        "native_host": {
+            "status": native_host.get("status"),
+            "ready": native_host.get("ready"),
+        },
+    }
 
 
 def _ensure_native_messaging_host_ready() -> dict[str, Any]:
@@ -1144,6 +1290,7 @@ def _local_handoff_is_compatible(
     status: dict[str, Any],
     *,
     expected_installation_id: str | None,
+    expected_client_version: str = __version__,
 ) -> bool:
     installation_matches = (
         expected_installation_id is None
@@ -1156,9 +1303,11 @@ def _local_handoff_is_compatible(
         if isinstance(capabilities, list)
         else set()
     )
-    return installation_matches and set(
-        LOCAL_HANDOFF_CAPABILITIES
-    ).issubset(capability_set)
+    return (
+        installation_matches
+        and status.get("client_version") == expected_client_version
+        and set(LOCAL_HANDOFF_CAPABILITIES).issubset(capability_set)
+    )
 
 
 def _start_profile_handoff(
@@ -1285,7 +1434,11 @@ def _request(
         if payload is not None
         else None
     )
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": f"official-recruitment-agent/{__version__}",
+        "X-ORA-Client-Version": __version__,
+    }
     if args.api_key and not is_local:
         headers["Authorization"] = f"Bearer {args.api_key}"
     else:

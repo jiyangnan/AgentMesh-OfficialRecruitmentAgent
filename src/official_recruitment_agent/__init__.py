@@ -1,3 +1,3 @@
 """Public adapter for AgentMesh-OfficialRecruitment."""
 
-__version__ = "0.1.12"
+__version__ = "0.1.13"
