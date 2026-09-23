@@ -164,6 +164,19 @@ python scripts/package_extension.py \
   --production
 ```
 
+## AgentMesh360 产品矩阵
+
+本产品是 [AgentMesh360](https://agentmesh360.com/) 产品矩阵的一员：一个账户驱动多个垂直 AI Agent。
+
+| 产品 | 仓库 | 官网 |
+|---|---|---|
+| AgentMesh-JobAgent（AI 求职：Boss 直聘 / 猎聘 / 智联招聘 / 51Job） | [jiyangnan/AgentMesh-JobAgent](https://github.com/jiyangnan/AgentMesh-JobAgent) | [jobagent.agentmesh360.com](https://jobagent.agentmesh360.com/zh/) |
+| AgentMesh-CreatorCut（口播与产品录屏的 AI 后期） | [jiyangnan/AgentMesh-CreatorCut](https://github.com/jiyangnan/AgentMesh-CreatorCut) | [creatorcut.agentmesh360.com](https://creatorcut.agentmesh360.com/zh/) |
+| AgentMesh-Lecturecast（课程视频智能生产） | [jiyangnan/AgentMesh-Lecturecast](https://github.com/jiyangnan/AgentMesh-Lecturecast) | [lecturecast.agentmesh360.com](https://lecturecast.agentmesh360.com/zh/) |
+| AgentMesh-Runtime（AI Agent 本机记忆与恢复） | [jiyangnan/AgentMesh-Runtime](https://github.com/jiyangnan/AgentMesh-Runtime) | [runtime.agentmesh360.com](https://runtime.agentmesh360.com/zh/) |
+| AgentMesh-Deploy-Agent（开源发布运维 Agent） | [jiyangnan/AgentMesh-Deploy-Agent](https://github.com/jiyangnan/AgentMesh-Deploy-Agent) | [deploy.agentmesh360.com](https://deploy.agentmesh360.com/zh/) |
+| AgentMesh-OfficialRecruitment（官网招聘申请工作台） | [jiyangnan/AgentMesh-OfficialRecruitmentAgent](https://github.com/jiyangnan/AgentMesh-OfficialRecruitmentAgent) | [recruit.agentmesh360.com](https://recruit.agentmesh360.com/zh/) |
+
 ## License
 
 Apache License 2.0。
