@@ -562,3 +562,12 @@ body:has(#review:not([hidden])) .field-list {
 .workbench-link:hover:not(:disabled) {
   color: #e8782b;
 }
+
+.cloud-source-choice { display: flex; flex-direction: row; gap: 8px; align-items: flex-start; margin-bottom: 10px; font-size: 13px; line-height: 1.5; }
+.cloud-source-choice input { flex: 0 0 auto; width: auto; min-height: 0; margin-top: 3px; padding: 0; }
+#cloud-profile-selection { overflow-wrap: anywhere; }
+
+/* Cloud source details must not shrink the field preview to zero height. */
+body:has(#use-cloud-profile:checked):has(#review:not([hidden])) > main { overflow-y: auto; }
+body:has(#use-cloud-profile:checked) #review:not([hidden]) { flex: none; overflow-y: visible; }
+body:has(#use-cloud-profile:checked) .field-list { flex: none; min-height: 128px; max-height: 190px; }

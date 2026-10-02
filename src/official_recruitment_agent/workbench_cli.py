@@ -452,6 +452,14 @@ def build_parser() -> argparse.ArgumentParser:
     extension_host_commands.add_parser("install")
     extension_host_commands.add_parser("status")
     subparsers.add_parser("profile-schema")
+    local_materials = subparsers.add_parser("local-materials")
+    local_commands = local_materials.add_subparsers(dest="local_materials_command", required=True)
+    local_commands.add_parser("list")
+    local_export = local_commands.add_parser("export")
+    local_export.add_argument("--fact-id", action="append", required=True)
+    local_export.add_argument("--output", type=Path, required=True)
+    local_export.add_argument("--device-label", required=True)
+    local_export.add_argument("--content-language", choices=("zh-CN", "en", "ja", "ko"), required=True)
     subparsers.add_parser(
         "profile-foundation",
         help="查看初始建档完整度与待补维度，不读取本机答案值",
@@ -653,6 +661,14 @@ def main(argv: list[str] | None = None) -> int:
                 ]
         elif args.command == "profile-schema":
             result = _profile_schema()
+        elif args.command == "local-materials":
+            from official_recruitment_agent.local_materials_export import LocalMaterialsExport
+            _, workspace_ref = _product_and_workspace(args)
+            local = LocalMaterialsExport(default_local_profile_path(), workspace_ref=workspace_ref)
+            if args.local_materials_command == "list":
+                result = {"workspace_ref":workspace_ref,"items":local.list(),"values_included":False}
+            else:
+                result = local.export(args.fact_id,output=args.output,device_label=args.device_label,content_locale=args.content_language)
         elif args.command == "profile-foundation":
             result = _request(
                 args,
@@ -844,6 +860,7 @@ def _command_label(args: argparse.Namespace) -> str:
         "extension_command",
         "extension_host_command",
         "profile_handoff_command",
+        "local_materials_command",
         "data_command",
     ):
         value = getattr(args, attribute, None)
