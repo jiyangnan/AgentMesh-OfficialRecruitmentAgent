@@ -26,7 +26,9 @@ def test_list_contains_metadata_only_and_export_requires_explicit_selection(loca
     assert body["items"][0]["first_saved_at"]=="2026-09-20T00:00:00+00:00"
     assert body["items"][0]["content"]["value"]=="SYNTHETIC selected"
     assert "SYNTHETIC unselected" not in output.read_text() and str(local.path) not in output.read_text()
-    assert os.stat(output).st_mode&0o777==0o600
+    # Windows stat exposes read/write bits, not POSIX owner/group permissions.
+    if os.name != "nt":
+        assert os.stat(output).st_mode&0o777==0o600
     assert len(local.list())==2
     with pytest.raises(ValueError):local.export([],output=tmp_path/"empty.json",device_label="SYNTHETIC",content_locale="en")
     with pytest.raises(ValueError):local.export(["localfact_other"],output=tmp_path/"other.json",device_label="SYNTHETIC",content_locale="en")
