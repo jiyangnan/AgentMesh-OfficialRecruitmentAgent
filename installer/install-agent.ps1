@@ -175,8 +175,8 @@ try {
     $Launcher = @'
 #!/usr/bin/env python3
 import json
-import os
 from pathlib import Path
+import subprocess
 import sys
 
 root = Path(__file__).resolve().parent
@@ -187,7 +187,8 @@ except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
     raise SystemExit("受管客户端版本指针无效，请重新运行官网安装器。") from error
 if root not in cli.parents or not cli.is_file():
     raise SystemExit("受管客户端入口不在官方安装目录，请重新运行官网安装器。")
-os.execv(str(cli), [str(cli), *sys.argv[1:]])
+# Windows execv starts a replacement process but loses its exit status.
+raise SystemExit(subprocess.run([str(cli), *sys.argv[1:]]).returncode)
 '@
     [IO.File]::WriteAllText(
         $LauncherPath,
