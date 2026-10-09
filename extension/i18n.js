@@ -501,6 +501,156 @@ const MESSAGES = {
   }
 };
 
+const INSTALL_MESSAGES = [
+  [
+    "本机 Agent 连接组件尚未就绪，请复制下方安装指令交给你的 Agent。",
+    "The local Agent connection component is not ready. Copy the setup command below and send it to your Agent.",
+    "ローカル Agent の接続機能が準備できていません。以下のセットアップコマンドをコピーして Agent に渡してください。",
+    "로컬 Agent 연결 구성 요소가 준비되지 않았습니다. 아래 설치 명령을 복사해 Agent에게 보내세요."
+  ],
+  ["安装指令", "Setup command", "セットアップコマンド", "설치 명령"],
+  ["操作系统", "Operating system", "OS", "운영체제"],
+  ["复制安装指令", "Copy setup command", "コマンドをコピー", "설치 명령 복사"],
+  [
+    "已复制，请粘贴给你的 Agent。",
+    "Copied. Paste it into your Agent.",
+    "コピーしました。Agent に貼り付けてください。",
+    "복사했습니다. Agent에 붙여 넣으세요."
+  ],
+  [
+    "复制失败，请选中上方指令手动复制。",
+    "Copy failed. Select the command above and copy it manually.",
+    "コピーできませんでした。上のコマンドを選択して手動でコピーしてください。",
+    "복사하지 못했습니다. 위 명령을 선택해 직접 복사하세요."
+  ],
+  [
+    "请粘贴给你的 Agent 执行，完成后再点“连接本机 Agent”。",
+    "Paste it into your Agent. Once setup is complete, select “Connect local Agent” again.",
+    "Agent に貼り付けて実行してください。完了後、もう一度「ローカル Agent に接続」を選んでください。",
+    "Agent에 붙여 넣어 실행하세요. 완료되면 “로컬 Agent 연결”을 다시 선택하세요."
+  ]
+];
+
+const CLOUD_FILL_MESSAGES = [
+  [
+    "页面已撤销，证据待同步",
+    "Page fill undone; evidence sync pending",
+    "ページの入力は取り消し済み、証拠の同期待ち",
+    "페이지 입력 취소 완료, 증거 동기화 대기"
+  ],
+  [
+    "页面已撤销，但工作台尚未确认收到证据。请不要再次撤销，直接选择“重试同步”。",
+    "The page fill was undone, but the workspace has not confirmed the evidence. Do not undo again; select “Retry sync”.",
+    "ページの入力は取り消しましたが、ワークスペースで証拠の受信を確認できていません。再度取り消さず「同期を再試行」を選んでください。",
+    "페이지 입력은 취소되었지만 워크스페이스가 증거를 확인하지 못했습니다. 다시 취소하지 말고 ‘동기화 재시도’를 선택하세요."
+  ],
+  [
+    "当前招聘页面已经变化，请重新识别并核对预览。",
+    "The recruitment page has changed. Inspect it again and review the preview.",
+    "採用ページが変更されました。再検出してプレビューを確認してください。",
+    "채용 페이지가 변경되었습니다. 다시 인식하고 미리보기를 확인하세요."
+  ],
+  [
+    "已保留 {count} 个填写后修改的字段。",
+    "Preserved {count} fields edited after filling.",
+    "入力後に変更された {count} 件の項目を保持しました。",
+    "자동 입력 후 수정한 필드 {count}개를 유지했습니다."
+  ],
+  [
+    "本次使用云端已确认档案",
+    "Use confirmed cloud profile for this session",
+    "今回は確認済みクラウドプロフィールを使う",
+    "이번 세션에서 확인된 클라우드 프로필 사용"
+  ],
+  [
+    "本次资料：{label} · 版本 {version}。仅提供当前步骤需要的值。",
+    "Selected: {label} · Version {version}. Only values needed for this step are shared.",
+    "使用する資料：{label} · バージョン {version}。現在のステップに必要な値だけを共有します。",
+    "선택 자료: {label} · 버전 {version}. 현재 단계에 필요한 값만 제공합니다."
+  ],
+  [
+    "云端资料暂不可用，请检查连接或继续使用现有填写资料。",
+    "Cloud materials are unavailable. Check your connection or use your existing filling materials.",
+    "クラウド資料を利用できません。接続を確認するか、従来の入力資料を使ってください。",
+    "클라우드 자료를 사용할 수 없습니다. 연결을 확인하거나 기존 입력 자료를 사용하세요."
+  ],
+  [
+    "请先在工作台确认一份云端档案，再重新选择。",
+    "Confirm a cloud profile in the workspace, then select it again.",
+    "ワークスペースでクラウドプロフィールを確認してから、選び直してください。",
+    "워크스페이스에서 클라우드 프로필을 확인한 후 다시 선택하세요."
+  ],
+  [
+    "请在云端档案或该申请中核对补充，确认后重新识别。许可和声明仍需本人核对。",
+    "Review and complete the cloud profile or this application, then inspect again. Verify work permission and declarations yourself.",
+    "クラウドプロフィールまたはこの応募で不足内容を確認・補完し、再検出してください。就労許可と申告はご自身で確認してください。",
+    "클라우드 프로필이나 이 지원서에서 누락 정보를 확인·보완한 후 다시 확인하세요. 취업 허가와 동의 사항은 직접 확인해야 합니다."
+  ],
+  [
+    "本步骤仍有 {count} 个必填资料问题。请在云端档案或该申请中核对补充，确认后重新识别。",
+    "This step still needs {count} required details. Review and complete the cloud profile or this application, then inspect again.",
+    "このステップでは必須情報があと {count} 件必要です。クラウドプロフィールまたはこの応募で確認・補完し、再検出してください。",
+    "이 단계에 필수 정보 {count}개가 더 필요합니다. 클라우드 프로필이나 이 지원서에서 확인·보완한 후 다시 확인하세요."
+  ],
+  [
+    "找不到这次云端填写会话。",
+    "This cloud filling session was not found.",
+    "このクラウド入力セッションが見つかりません。",
+    "이 클라우드 입력 세션을 찾을 수 없습니다."
+  ],
+  [
+    "填写资料、岗位或页面已变化，请重新识别并审阅。",
+    "The materials, job or page changed. Inspect and review again.",
+    "資料、求人またはページが変わりました。再検出して確認してください。",
+    "자료, 채용 공고 또는 페이지가 변경되었습니다. 다시 확인하고 검토하세요."
+  ],
+  [
+    "云端填写会话已到期，请重新识别。",
+    "The cloud filling session expired. Inspect again.",
+    "クラウド入力セッションの期限が切れました。再検出してください。",
+    "클라우드 입력 세션이 만료되었습니다. 다시 확인하세요."
+  ],
+  [
+    "请先审阅当前步骤，补齐重复行后再确认填写。",
+    "Review this step and add missing repeated rows before confirming the fill.",
+    "現在のステップを確認し、不足する繰り返し行を追加してから入力を確定してください。",
+    "현재 단계를 검토하고 누락된 반복 행을 추가한 후 입력을 확인하세요."
+  ],
+  [
+    "云端填写请求无效，请核对当前页面和资料。",
+    "The cloud filling request is invalid. Check this page and the selected materials.",
+    "クラウド入力リクエストが無効です。現在のページと資料を確認してください。",
+    "클라우드 입력 요청이 올바르지 않습니다. 현재 페이지와 선택한 자료를 확인하세요."
+  ],
+  [
+    "填写会话不属于此设备，请重新连接并识别。",
+    "This filling session belongs to a different device. Reconnect and inspect again.",
+    "この入力セッションは別のデバイスのものです。再接続して再検出してください。",
+    "이 입력 세션은 다른 기기의 세션입니다. 다시 연결하고 확인하세요."
+  ],
+  [
+    "账户工作区已变化，请重新连接并选择资料。",
+    "The account workspace changed. Reconnect and select materials again.",
+    "アカウントのワークスペースが変わりました。再接続して資料を選び直してください。",
+    "계정 워크스페이스가 변경되었습니다. 다시 연결하고 자료를 선택하세요."
+  ],
+  [
+    "这份资料已删除，请重新选择有效资料。",
+    "This material was deleted. Select a valid material.",
+    "この資料は削除されました。有効な資料を選んでください。",
+    "이 자료는 삭제되었습니다. 유효한 자료를 선택하세요."
+  ],
+  [
+    "这份资料已到期，请重新选择有效资料。",
+    "This material expired. Select a valid material.",
+    "この資料は期限切れです。有効な資料を選んでください。",
+    "이 자료는 만료되었습니다. 유효한 자료를 선택하세요."
+  ]
+];
+for (const row of [...CLOUD_FILL_MESSAGES, ...INSTALL_MESSAGES]) {
+  SUPPORTED_LOCALES.forEach((language, index) => { MESSAGES[language][row[0]] = row[index]; });
+}
+
 let currentLocale = "en";
 
 export function locale() {

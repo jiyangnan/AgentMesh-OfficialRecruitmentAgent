@@ -978,6 +978,14 @@ class ProductClient:
             extra_headers={"Idempotency-Key": idempotency_key},
         )
 
+    def cloud_fill_profile(self) -> dict[str, Any]:
+        return self._request("GET", "/api/v1/cloud-assist-sessions/profile",
+            extra_headers={"X-ORA-Client-Protocol": "official-workbench-v2"})
+
+    def create_cloud_assist_session(self, payload, *, idempotency_key):
+        return self._request("POST", "/api/v1/cloud-assist-sessions", payload,
+            extra_headers={"Idempotency-Key": idempotency_key, "X-ORA-Client-Protocol": "official-workbench-v2"})
+
     def _request(
         self,
         method: str,
@@ -1175,6 +1183,15 @@ class LocalHandoffService:
             "status": "disconnected",
         }
 
+    def extension_cloud_profile(self, *, session_token, origin):
+        self.store.require_extension_session(token=session_token, extension_origin=origin)
+        result = self.product.cloud_fill_profile()
+        if result.get("workspace_ref") != self.configured_workspace_ref:
+            raise LocalHandoffError(409, "cloud_fill_workspace_mismatch", "账户工作区已变化，请重新连接并选择资料。")
+        profile = result.get("profile")
+        return {"workspace_ref": self.configured_workspace_ref,
+            "profile": {key: profile[key] for key in ("id", "label", "version_number", "expires_at")} if isinstance(profile, dict) else None}
+
     def create_extension_assist_session(
         self,
         *,
@@ -1205,15 +1222,24 @@ class LocalHandoffService:
                 "invalid_extension_assist_request",
                 "当前页面的辅助填写请求格式无效。",
             )
-        result = self.product.create_assist_session(
-            {
-                "page_url": page_url,
-                "page_title": page_title,
-                "installation_id": session["installation_id"],
-                "expires_in_seconds": 900,
-            },
-            idempotency_key=idempotency_key,
-        )
+        requested = {"page_url": page_url, "page_title": page_title,
+            "installation_id": session["installation_id"], "expires_in_seconds": 900}
+        source = payload.get("material_source", "legacy")
+        if source == "cloud":
+            if (payload.get("cloud_use_confirmed") is not True
+                or payload.get("workspace_ref") != self.configured_workspace_ref
+                or not re.fullmatch(r"[a-f0-9]{32}", str(payload.get("profile_version_id") or ""))):
+                raise LocalHandoffError(422, "cloud_fill_request_invalid", "云端填写请求无效，请核对当前页面和资料。")
+            current = self.extension_cloud_profile(session_token=session_token, origin=origin)
+            if not current["profile"] or current["profile"]["id"] != payload["profile_version_id"]:
+                raise LocalHandoffError(409, "cloud_fill_changed", "填写资料、岗位或页面已变化，请重新识别并审阅。")
+            result = self.product.create_cloud_assist_session({**requested,
+                "workspace_ref": self.configured_workspace_ref, "profile_version_id": payload["profile_version_id"],
+                "cloud_use_confirmed": True}, idempotency_key=idempotency_key)
+        elif source == "legacy":
+            result = self.product.create_assist_session(requested, idempotency_key=idempotency_key)
+        else:
+            raise LocalHandoffError(422, "cloud_fill_request_invalid", "云端填写请求无效，请核对当前页面和资料。")
         if (
             not isinstance(result.get("result"), dict)
             or not isinstance(result.get("extension_capability"), str)
@@ -1382,6 +1408,8 @@ def create_handler(
                         session_token=self._bearer(),
                         origin=origin,
                     )
+                elif path == "/v1/extension/cloud-profile":
+                    result = service.extension_cloud_profile(session_token=self._bearer(), origin=origin)
                 elif path == "/v1/extension/assist-sessions":
                     result = service.create_extension_assist_session(
                         session_token=self._bearer(),

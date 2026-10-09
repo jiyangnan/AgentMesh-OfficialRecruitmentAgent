@@ -990,3 +990,23 @@ def test_cascading_select_answer_maps_each_segment_to_platform_value() -> None:
         "select",
     ) == "sz"
     assert _binding_value("未知地区", options, "select") is None
+
+
+def test_explicit_cloud_profile_forwarding_is_minimal_and_account_bound(tmp_path,monkeypatch):
+    service,product=_service(tmp_path)
+    connected=service.connect_extension(installation_id=INSTALLATION_ID,pairing_secret=PAIRING_SECRET,origin=EXTENSION_ORIGIN)
+    args={"session_token":connected["session_token"],"origin":EXTENSION_ORIGIN}
+    cloud={"workspace_ref":WORKSPACE_REF,"profile":{"id":"a"*32,"label":"SYNTHETIC","version_number":2,"expires_at":"2099-01-01T00:00:00Z","fields":{"private":"SYNTHETIC NOT TO EXTENSION"}}}
+    monkeypatch.setattr(product,"cloud_fill_profile",lambda:cloud,raising=False)
+    assert "fields" not in service.extension_cloud_profile(**args)["profile"]
+    forwarded=[]
+    def create(payload,*,idempotency_key):
+        forwarded.append(payload)
+        return {"result":{"task":{}},"extension_capability":"oraext_synthetic.test"}
+    monkeypatch.setattr(product,"create_cloud_assist_session",create,raising=False)
+    payload={"page_url":"https://example.test/apply","idempotency_key":"synthetic-cloud-assist-key","material_source":"cloud","workspace_ref":WORKSPACE_REF,"profile_version_id":"a"*32,"cloud_use_confirmed":True,"installation_id":"untrusted-browser-device","fields":{"extra":"must not forward"}}
+    service.create_extension_assist_session(**args,payload=payload)
+    assert forwarded[0]["installation_id"]==INSTALLATION_ID and "fields" not in forwarded[0]
+    cloud["workspace_ref"]="different-account"
+    with pytest.raises(LocalHandoffError):service.create_extension_assist_session(**args,payload=payload)
+    assert len(forwarded)==1

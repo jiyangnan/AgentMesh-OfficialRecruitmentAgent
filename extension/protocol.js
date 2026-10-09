@@ -46,6 +46,7 @@ export async function assistSessionIdempotencyKey(
   installationId,
   timeBucket = Math.floor(Date.now() / 300000),
   refreshFromTaskId = null,
+  cloudProfileId = null,
 ) {
   const url = new URL(pageUrl);
   url.hash = "";
@@ -54,6 +55,7 @@ export async function assistSessionIdempotencyKey(
       installation_id: installationId,
       page_url: url.toString(),
       time_bucket: timeBucket,
+      ...(cloudProfileId ? { material_source: "cloud", profile_version_id: cloudProfileId } : {}),
       ...(refreshFromTaskId
         ? { refresh_from_task_id: refreshFromTaskId }
         : {}),

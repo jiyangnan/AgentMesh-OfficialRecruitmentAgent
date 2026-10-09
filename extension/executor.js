@@ -26,6 +26,19 @@
     return url.href;
   }
 
+  function cloudPageMatches(task) {
+    if (task.material_source !== "cloud") return true;
+    const frameUrl = task.plan?.frame_url;
+    const topUrl = task.plan?.top_page_url || task.form_url;
+    if (!frameUrl || !topUrl || canonicalPageUrl(location.href) !== canonicalPageUrl(frameUrl)) return false;
+    try {
+      return canonicalPageUrl(window.top.location.href) === canonicalPageUrl(topUrl);
+    } catch {
+      // Cross-origin top pages are checked with the live tab URL in the popup.
+      return true;
+    }
+  }
+
   function text(value) {
     return value?.replace(/\s+/g, " ").trim() ?? "";
   }
@@ -1898,6 +1911,7 @@
     if (location.origin !== task.allowed_origin) {
       return { ok: false, message: "当前页面来源与填写任务不一致。" };
     }
+    if (!cloudPageMatches(task)) return { ok: false, message: "当前招聘页面已经变化，请重新识别并核对预览。" };
     let candidate;
     try {
       candidate = chooseStepRoot();
@@ -1960,6 +1974,7 @@
         const beforeSections = new Set(
           repeatGroupSections(candidate.root, requirement.group),
         );
+        if (!cloudPageMatches(task)) return { ok: false, message: "当前招聘页面已经变化，请重新识别并核对预览。" };
         addControl.click();
         const newSections = await waitForValue(() => {
           const additions = repeatGroupSections(
@@ -2206,6 +2221,7 @@
     if (location.origin !== task.allowed_origin) {
       return { ok: false, message: "当前页面来源与填写任务不一致。" };
     }
+    if (!cloudPageMatches(task)) return { ok: false, message: "当前招聘页面已经变化，请重新识别并核对预览。" };
     const undoKey = task.plan?.step_id
       ? `${task.fill_task_id}:${task.plan.step_id}`
       : task.fill_task_id;
@@ -2301,6 +2317,7 @@
       ]),
     );
     for (const [field, element] of resolved) {
+      if (!cloudPageMatches(task)) return { ok: false, message: "当前招聘页面已经变化，请重新识别并核对预览。" };
       if (
         isDeclarationControl(element) &&
         field.explicit_confirmation !== true
@@ -2488,11 +2505,23 @@
       globalThis.__ORA_FILL_UNDO__ || {};
     const repeatAdditions =
       globalThis.__ORA_REPEAT_ADDITIONS__?.[task.fill_task_id] || [];
+    const snapshotAfterFill = (element, original) => originalSnapshot(element, original,
+      original.radioGroup?.map(member => ({ element: member.element, checked: member.element.checked })));
+    for (const original of originals) {
+      const element = document.querySelector(original.selector);
+      if (element) original.after = snapshotAfterFill(element, original);
+    }
+    const repeatSnapshots = repeatAdditions.map(section => ({ section,
+      controls: Array.from(section.querySelectorAll("input, textarea, select")).map(element => ({
+        element, snapshot: originalSnapshot(element, { selector: selectorFor(element) }),
+      })),
+    }));
     if (originals.length || repeatAdditions.length) {
       globalThis.__ORA_FILL_UNDO__[undoKey] = {
         pageFingerprint,
         originals,
         repeatAdditions,
+        repeatSnapshots,
       };
     } else {
       delete globalThis.__ORA_FILL_UNDO__[undoKey];
@@ -2524,6 +2553,10 @@
       return { ok: false, message: "没有可撤销的本地填写记录。" };
     }
     const entries = [];
+    const protectedSections = new Set((entry.repeatSnapshots || []).filter(({ section, controls }) =>
+      controls.some(({ element, snapshot }) => !originalMatches(element, snapshot)) ||
+      section.querySelectorAll("input, textarea, select").length !== controls.length,
+    ).map(({ section }) => section));
     for (const original of entry.originals) {
       const element = document.querySelector(original.selector);
       if (!element) {
@@ -2536,25 +2569,32 @@
         });
         continue;
       }
-      restoreOriginal(element, original);
+      const changed = !original.after || !originalMatches(element, original.after);
       entries.push({
         original,
         element,
         field_signature: original.field_signature,
-        status: "missing",
-        reason_code: "restore_not_applied",
+        status: changed ? "skipped" : "missing",
+        reason_code: changed ? "changed_after_fill" : "restore_not_applied",
+        preserved: changed ? originalSnapshot(element, original, original.radioGroup?.map(member => ({ element: member.element, checked: member.element.checked }))) : null,
       });
+    }
+    // Inspect every field before restoring: one field can update another.
+    for (const item of entries) {
+      if (item.element && item.status !== "skipped") restoreOriginal(item.element, item.original);
     }
     await new Promise((resolve) => setTimeout(resolve, 350));
     for (const item of entries) {
-      if (!item.element || originalMatches(item.element, item.original)) {
+      if (item.status === "skipped" || !item.element || originalMatches(item.element, item.original)) {
         continue;
       }
       restoreOriginal(item.element, item.original);
     }
     await new Promise((resolve) => setTimeout(resolve, 350));
     for (const item of entries) {
-      if (item.element && originalMatches(item.element, item.original)) {
+      if (item.status === "skipped") {
+        if (!originalMatches(item.element, item.preserved)) restoreOriginal(item.element, item.preserved);
+      } else if (item.element && originalMatches(item.element, item.original)) {
         item.status = "filled";
         item.reason_code = "restored";
       }
@@ -2568,7 +2608,7 @@
     );
     let removedRepeatGroupCount = 0;
     for (const section of [...(entry.repeatAdditions || [])].reverse()) {
-      if (!section?.isConnected) continue;
+      if (!section?.isConnected || protectedSections.has(section) || entries.some(item => section.contains(item.element) && item.status !== "filled")) continue;
       section.remove();
       removedRepeatGroupCount += 1;
     }
@@ -2576,7 +2616,7 @@
       delete globalThis.__ORA_REPEAT_ADDITIONS__[taskId];
     }
     const failedOriginals = entries
-      .filter((item) => item.status !== "filled")
+      .filter((item) => item.status !== "filled" && item.status !== "skipped")
       .map((item) => item.original);
     if (failedOriginals.length) {
       globalThis.__ORA_FILL_UNDO__[undoKey] = {

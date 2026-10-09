@@ -363,8 +363,8 @@ def is_managed_runtime(root: Path | None = None) -> bool:
         return False
     if os.environ.get("ORA_TEST_MANAGED_RUNTIME") == "1":
         return True
-    executable = Path(sys.executable).resolve()
-    return install_root.resolve() in executable.parents
+    executable_directory = Path(sys.executable).absolute().parent.resolve()
+    return install_root.resolve() in executable_directory.parents
 
 
 def _core_base() -> str:
@@ -860,7 +860,10 @@ def apply_managed_update(
             temporary = Path(temporary_name)
             wheel = _download_asset(
                 wheel_asset,
-                temporary / "client.whl",
+                temporary / (
+                    "official_recruitment_agent-"
+                    f"{wheel_asset['version']}-py3-none-any.whl"
+                ),
                 opener=opener,
             )
             skill = _download_asset(

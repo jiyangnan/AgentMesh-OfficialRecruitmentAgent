@@ -28,6 +28,22 @@ def _b64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
+def test_managed_runtime_accepts_venv_python_symlink_only_inside_install_root(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    root = _managed_root(tmp_path / "managed")
+    interpreter = tmp_path / "base-python"
+    interpreter.write_text("synthetic interpreter", encoding="utf-8")
+    venv_python = root / "releases" / "0.1.13" / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(interpreter)
+    monkeypatch.delenv("ORA_TEST_MANAGED_RUNTIME", raising=False)
+    monkeypatch.setattr(updates.sys, "executable", str(venv_python))
+    assert updates.is_managed_runtime(root) is True
+    monkeypatch.setattr(updates.sys, "executable", str(interpreter))
+    assert updates.is_managed_runtime(root) is False
+
+
 def _manifest(private_key: Ed25519PrivateKey) -> dict[str, Any]:
     wheel_sha = "1" * 64
     payload: dict[str, Any] = {
@@ -476,6 +492,14 @@ def test_managed_update_switches_pointer_and_preserves_managed_state(
 
     def fake_run(command, *, env=None, timeout=180):
         del env, timeout
+        if command[1:4] == ["-m", "pip", "install"]:
+            from packaging.utils import parse_wheel_filename
+
+            distribution, version, _build, _tags = parse_wheel_filename(
+                Path(command[-1]).name
+            )
+            assert distribution == "official-recruitment-agent"
+            assert str(version) == signed_manifest["latest_client_version"]
         joined = " ".join(command)
         if "import official_recruitment_agent" in joined:
             return "0.1.13"

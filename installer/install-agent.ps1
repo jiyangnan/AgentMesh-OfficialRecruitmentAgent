@@ -5,8 +5,8 @@ $BaseUrl = if ($env:ORA_INSTALL_BASE_URL) {
 } else {
     "https://recruit.agentmesh360.com"
 }
-$AdapterVersion = "0.1.13"
-$AdapterSha256 = "4d8c10b1497776ac213eb25a2928971ee92ab8c8b7a5c2dd5b7f489c2757d60b"
+$AdapterVersion = "0.1.15"
+$AdapterSha256 = "75c7ff81ad8e26a92690e267f2e7a74bcadc679fb380f19573a32224c6e95794"
 $SkillVersion = "0.3.8"
 $SkillSha256 = "45cbce03d86dce71fb308722a601f6484fb22eeac08228435be2e9c83bb942e6"
 $LocalAppData = if ($env:LOCALAPPDATA) {
@@ -175,8 +175,8 @@ try {
     $Launcher = @'
 #!/usr/bin/env python3
 import json
-import os
 from pathlib import Path
+import subprocess
 import sys
 
 root = Path(__file__).resolve().parent
@@ -187,7 +187,8 @@ except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
     raise SystemExit("受管客户端版本指针无效，请重新运行官网安装器。") from error
 if root not in cli.parents or not cli.is_file():
     raise SystemExit("受管客户端入口不在官方安装目录，请重新运行官网安装器。")
-os.execv(str(cli), [str(cli), *sys.argv[1:]])
+# Windows execv starts a replacement process but loses its exit status.
+raise SystemExit(subprocess.run([str(cli), *sys.argv[1:]]).returncode)
 '@
     [IO.File]::WriteAllText(
         $LauncherPath,
