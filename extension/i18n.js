@@ -501,6 +501,36 @@ const MESSAGES = {
   }
 };
 
+const INSTALL_MESSAGES = [
+  [
+    "本机 Agent 连接组件尚未就绪，请复制下方安装指令交给你的 Agent。",
+    "The local Agent connection component is not ready. Copy the setup command below and send it to your Agent.",
+    "ローカル Agent の接続機能が準備できていません。以下のセットアップコマンドをコピーして Agent に渡してください。",
+    "로컬 Agent 연결 구성 요소가 준비되지 않았습니다. 아래 설치 명령을 복사해 Agent에게 보내세요."
+  ],
+  ["安装指令", "Setup command", "セットアップコマンド", "설치 명령"],
+  ["操作系统", "Operating system", "OS", "운영체제"],
+  ["复制安装指令", "Copy setup command", "コマンドをコピー", "설치 명령 복사"],
+  [
+    "已复制，请粘贴给你的 Agent。",
+    "Copied. Paste it into your Agent.",
+    "コピーしました。Agent に貼り付けてください。",
+    "복사했습니다. Agent에 붙여 넣으세요."
+  ],
+  [
+    "复制失败，请选中上方指令手动复制。",
+    "Copy failed. Select the command above and copy it manually.",
+    "コピーできませんでした。上のコマンドを選択して手動でコピーしてください。",
+    "복사하지 못했습니다. 위 명령을 선택해 직접 복사하세요."
+  ],
+  [
+    "请粘贴给你的 Agent 执行，完成后再点“连接本机 Agent”。",
+    "Paste it into your Agent. Once setup is complete, select “Connect local Agent” again.",
+    "Agent に貼り付けて実行してください。完了後、もう一度「ローカル Agent に接続」を選んでください。",
+    "Agent에 붙여 넣어 실행하세요. 완료되면 “로컬 Agent 연결”을 다시 선택하세요."
+  ]
+];
+
 const CLOUD_FILL_MESSAGES = [
   [
     "当前招聘页面已经变化，请重新识别并核对预览。",
@@ -605,7 +635,7 @@ const CLOUD_FILL_MESSAGES = [
     "이 자료는 만료되었습니다. 유효한 자료를 선택하세요."
   ]
 ];
-for (const row of CLOUD_FILL_MESSAGES) {
+for (const row of [...CLOUD_FILL_MESSAGES, ...INSTALL_MESSAGES]) {
   SUPPORTED_LOCALES.forEach((language, index) => { MESSAGES[language][row[0]] = row[index]; });
 }
 

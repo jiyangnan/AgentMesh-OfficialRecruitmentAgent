@@ -24,6 +24,11 @@ const EXTENSION_STORAGE_SCHEMA_VERSION = 1;
 const LOCAL_AGENT_URL = "http://127.0.0.1:8765";
 const INSTALLATION_DESCRIPTOR_FILE = "agentmesh-installation.json";
 const NATIVE_MESSAGING_HOST = "com.agentmesh360.officialrecruitment";
+const INSTALL_COMMANDS = {
+  unix: "curl -fsSL https://recruit.agentmesh360.com/install-agent.sh | sh",
+  windows:
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://recruit.agentmesh360.com/install-agent.ps1 | iex"',
+};
 const LOCAL_DEVELOPMENT_SERVERS = [
   "http://127.0.0.1:8010",
   "http://127.0.0.1:8000",
@@ -52,6 +57,11 @@ const undoButton = document.querySelector("#undo");
 const connection = document.querySelector("#connection");
 const extensionVersion = document.querySelector("#extension-version");
 const message = document.querySelector("#message");
+const installHelp = document.querySelector("#install-help");
+const installCommand = document.querySelector("#install-command");
+const copyInstallButton = document.querySelector("#copy-install-command");
+const installCopyStatus = document.querySelector("#install-copy-status");
+const installPlatformButtons = document.querySelectorAll("[data-install-platform]");
 const cloudProfileChoice = document.querySelector("#use-cloud-profile");
 const cloudProfileSelection = document.querySelector("#cloud-profile-selection");
 const openWorkbenchButton = document.querySelector("#open-workbench");
@@ -87,6 +97,46 @@ function showMessage(text, error = false) {
   message.textContent = localizeMessage(text);
   message.classList.toggle("error", error);
 }
+
+function selectInstallPlatform(platform) {
+  installCommand.value = INSTALL_COMMANDS[platform];
+  installCommand.rows = platform === "windows" ? 4 : 3;
+  installCopyStatus.hidden = true;
+  installCopyStatus.textContent = "";
+  installPlatformButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.installPlatform === platform));
+  });
+}
+
+function localAgentSetupRequired() {
+  return Object.assign(
+    new Error("本机 Agent 连接组件尚未就绪，请复制下方安装指令交给你的 Agent。"),
+    { code: "local_agent_setup_required" },
+  );
+}
+
+selectInstallPlatform(
+  /win/i.test(navigator.userAgentData?.platform || navigator.platform) ? "windows" : "unix",
+);
+installPlatformButtons.forEach((button) => {
+  button.addEventListener("click", () => selectInstallPlatform(button.dataset.installPlatform));
+});
+copyInstallButton.addEventListener("click", async () => {
+  const command = installCommand.value;
+  try {
+    await navigator.clipboard.writeText(command);
+    if (installCommand.value !== command || installHelp.hidden) return;
+    installCopyStatus.textContent = t("已复制，请粘贴给你的 Agent。");
+    installCopyStatus.classList.remove("error");
+  } catch {
+    if (installCommand.value !== command || installHelp.hidden) return;
+    installCommand.focus();
+    installCommand.select();
+    installCopyStatus.textContent = t("复制失败，请选中上方指令手动复制。");
+    installCopyStatus.classList.add("error");
+  }
+  installCopyStatus.hidden = false;
+});
 
 function responseErrorMessage(payload, fallback) {
   const base =
@@ -261,6 +311,7 @@ function currentReviewApproved() {
 }
 
 function connectedUi(connected) {
+  installHelp.hidden = true;
   setup.hidden = connected;
   assist.hidden = !connected;
   disconnectButton.hidden = !connected;
@@ -497,9 +548,7 @@ async function connectLocalAgentWithDescriptor() {
 
 async function connectLocalAgentWithNativeHost() {
   if (!chrome.runtime?.sendNativeMessage) {
-    throw new Error(
-      "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。",
-    );
+    throw localAgentSetupRequired();
   }
   let result;
   try {
@@ -511,9 +560,7 @@ async function connectLocalAgentWithNativeHost() {
       },
     );
   } catch {
-    throw new Error(
-      "本机 Agent 连接组件尚未就绪，请先把官网安装指令交给你的 Agent。",
-    );
+    throw localAgentSetupRequired();
   }
   if (result?.status === "error") {
     throw new Error(
@@ -628,6 +675,8 @@ async function restoreConnection() {
 connectionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   message.hidden = true;
+  installHelp.hidden = true;
+  installCopyStatus.hidden = true;
   try {
     if (!(await autoConnectLocalDevelopment())) {
       await connectLocalAgent();
@@ -635,6 +684,7 @@ connectionForm.addEventListener("submit", async (event) => {
     showMessage("已连接本机 Agent。现在可识别当前招聘页面。");
   } catch (error) {
     showMessage(error instanceof Error ? error.message : "连接失败。", true);
+    installHelp.hidden = error?.code !== "local_agent_setup_required";
   }
 });
 

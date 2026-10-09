@@ -540,6 +540,63 @@ body:has(#review:not([hidden])) .field-list {
   background: #faeaea;
 }
 
+.install-help {
+  margin-top: 10px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #bdc8c2;
+  border-radius: 6px;
+}
+
+.install-help > strong {
+  font-size: 12px;
+}
+
+.install-platforms {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.install-platforms button {
+  flex: 1;
+  min-height: 30px;
+  padding: 0 6px;
+  color: #61706b;
+  background: #f4f6f3;
+  border: 1px solid #d9dfdb;
+  font-size: 11px;
+}
+
+.install-platforms button[aria-pressed="true"] {
+  color: #183f37;
+  border-color: #183f37;
+  font-weight: 700;
+}
+
+#install-command {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  resize: none;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+#copy-install-command {
+  width: 100%;
+  font-size: 12px;
+}
+
+#install-copy-status {
+  color: #183f37;
+  font-size: 11px;
+}
+
+#install-copy-status.error {
+  color: #b33a3a;
+}
+
 .popup-footer {
   margin-top: 14px;
   padding-top: 12px;

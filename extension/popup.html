@@ -87,6 +87,17 @@
         </div>
       </section>
       <p id="message" class="message" hidden></p>
+      <section id="install-help" class="install-help" aria-labelledby="install-help-title" hidden>
+        <strong id="install-help-title" data-i18n="安装指令">Setup command</strong>
+        <div class="install-platforms" role="group" data-i18n-aria="操作系统">
+          <button type="button" data-install-platform="unix" aria-pressed="true">macOS / Linux</button>
+          <button type="button" data-install-platform="windows" aria-pressed="false">Windows</button>
+        </div>
+        <textarea id="install-command" rows="3" readonly spellcheck="false" aria-labelledby="install-help-title"></textarea>
+        <button id="copy-install-command" class="secondary" type="button" data-i18n="复制安装指令">Copy setup command</button>
+        <p id="install-copy-status" class="setup-note" role="status" hidden></p>
+        <p class="setup-note" data-i18n="请粘贴给你的 Agent 执行，完成后再点“连接本机 Agent”。">Paste it into your Agent. Once setup is complete, select “Connect local Agent” again.</p>
+      </section>
       <nav class="popup-footer" aria-label="工作台入口" data-i18n-aria="工作台入口">
         <button id="open-workbench" class="workbench-link" type="button" disabled>
           <span data-i18n="前往工作台">Open workspace</span>
