@@ -1102,6 +1102,10 @@ async function observeTask(sessionTask, observation) {
 
 taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (pendingExecutionEvidence?.evidence?.event_type === "fill_undone") {
+    showPendingEvidenceSync();
+    return;
+  }
   message.hidden = true;
   review.hidden = true;
   resetReviewApproval();
@@ -1707,6 +1711,10 @@ executeButton.addEventListener("click", async () => {
 });
 
 undoButton.addEventListener("click", async () => {
+  if (pendingExecutionEvidence?.evidence?.event_type === "fill_undone") {
+    showPendingEvidenceSync();
+    return;
+  }
   if (
     !currentTask ||
     !currentTab?.id ||
