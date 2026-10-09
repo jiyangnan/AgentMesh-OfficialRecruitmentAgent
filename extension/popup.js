@@ -188,13 +188,13 @@ async function restorePendingExecutionEvidence(task) {
     candidate?.fill_task_id === task.fill_task_id &&
     candidate?.allowed_origin === task.allowed_origin &&
     new Date(candidate?.expires_at ?? 0).getTime() > Date.now() &&
-    ["fill_executed", "fill_failed"].includes(
+    ["fill_executed", "fill_failed", "fill_undone"].includes(
       candidate?.evidence?.event_type,
     );
-  if (
-    !matches ||
-    ["executed_locally", "failed_locally"].includes(task.status)
-  ) {
+  const acknowledged = candidate?.evidence?.event_type === "fill_undone"
+    ? task.status === "undone_locally"
+    : ["executed_locally", "failed_locally"].includes(task.status);
+  if (!matches || acknowledged) {
     if (candidate) await clearPendingExecutionEvidence();
     return false;
   }
@@ -208,9 +208,11 @@ function showPendingEvidenceSync() {
   undoButton.disabled = true;
   executeButton.disabled = false;
   executeButton.textContent = t("重试同步");
-  setConnection("页面已填写，证据待同步");
+  const undone = pendingExecutionEvidence?.evidence?.event_type === "fill_undone";
+  setConnection(undone ? "页面已撤销，证据待同步" : "页面已填写，证据待同步");
   showMessage(
-    "页面已经执行，但工作台尚未确认收到执行证据。请不要再次填写，直接选择“重试同步”。",
+    undone ? "页面已撤销，但工作台尚未确认收到证据。请不要再次撤销，直接选择“重试同步”。"
+      : "页面已经执行，但工作台尚未确认收到执行证据。请不要再次填写，直接选择“重试同步”。",
     true,
   );
 }
@@ -717,7 +719,7 @@ disconnectButton.addEventListener("click", async () => {
 
 function cloudHeaders() {
   return currentMaterialSource === "cloud" ? {
-    "X-ORA-Client-Protocol": "official-workbench-v1",
+    "X-ORA-Client-Protocol": "official-workbench-v2",
     "X-ORA-Installation": currentCloudInstallation || "",
   } : {};
 }
@@ -733,7 +735,7 @@ async function selectCloudProfile() {
     payload = await localAgentRequest("/v1/extension/cloud-profile", {}, currentLocalSessionToken);
   } else {
     const response = await fetch(`${currentServer}/api/v1/cloud-assist-sessions/profile`, {
-      headers: { ...developmentAssistSessionHeaders("cloud-profile-selection"), "X-ORA-Client-Protocol": "official-workbench-v1" },
+      headers: { ...developmentAssistSessionHeaders("cloud-profile-selection"), "X-ORA-Client-Protocol": "official-workbench-v2" },
       cache: "no-store",
     });
     payload = await response.json();
@@ -801,7 +803,7 @@ async function createAssistSession(tab) {
   } else {
     const response = await fetch(`${currentServer}/api/v1/${cloudSelection ? "cloud-assist-sessions" : "assist-sessions"}`, {
       method: "POST",
-      headers: { ...developmentAssistSessionHeaders(idempotencyKey), ...(cloudSelection ? {"X-ORA-Client-Protocol": "official-workbench-v1"} : {}) },
+      headers: { ...developmentAssistSessionHeaders(idempotencyKey), ...(cloudSelection ? {"X-ORA-Client-Protocol": "official-workbench-v2"} : {}) },
       body: JSON.stringify({
         page_url: tab.url,
         page_title: tab.title || null,
@@ -1545,7 +1547,8 @@ async function retryPendingEvidenceSync() {
     await clearPendingExecutionEvidence();
     resetReviewApproval();
     executeButton.textContent = t("确认填写");
-    renderAcknowledgedExecution(result);
+    if (result.event_type === "fill_undone") renderAcknowledgedUndo(result);
+    else renderAcknowledgedExecution(result);
   } catch {
     showPendingEvidenceSync();
   }
@@ -1739,25 +1742,36 @@ undoButton.addEventListener("click", async () => {
       );
       return;
     }
+    await persistPendingExecutionEvidence(currentTask, result, currentTask.version);
     await sendEvidence(currentTask.fill_task_id, result);
-    setConnection("已撤销当前步骤的填写");
-    clearExecutionIssues();
-    resetReviewApproval();
-    showMessage(
-      t("已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。", {
-        count: restoredCount,
-        removed:
-        result.removed_repeat_group_count
-          ? t("；移除 {count} 条本次新增记录", {
-              count: result.removed_repeat_group_count,
-            })
-          : "",
-      }) + (preservedCount ? " " + t("已保留 {count} 个填写后修改的字段。", { count: preservedCount }) : ""),
-    );
+    await clearPendingExecutionEvidence();
+    renderAcknowledgedUndo(result);
   } catch (error) {
-    showMessage(error instanceof Error ? error.message : "撤销失败。", true);
+    if (pendingExecutionEvidence) showPendingEvidenceSync();
+    else showMessage(error instanceof Error ? error.message : "撤销失败。", true);
   }
 });
+
+function renderAcknowledgedUndo(result) {
+  const restoredCount = result.field_results.filter(
+    (item) => item.status === "filled" && item.reason_code === "restored",
+  ).length;
+  const preservedCount = result.field_results.filter(
+    (item) => item.status === "skipped" && item.reason_code === "changed_after_fill",
+  ).length;
+  setConnection("已撤销当前步骤的填写");
+  clearExecutionIssues();
+  resetReviewApproval();
+  executeButton.disabled = true;
+  undoButton.disabled = true;
+  showMessage(
+    t("已恢复 {count} 个字段{removed}。如需再次填写，请重新识别当前步骤。", {
+      count: restoredCount,
+      removed: result.removed_repeat_group_count
+        ? t("；移除 {count} 条本次新增记录", { count: result.removed_repeat_group_count }) : "",
+    }) + (preservedCount ? " " + t("已保留 {count} 个填写后修改的字段。", { count: preservedCount }) : ""),
+  );
+}
 
 async function sendEvidence(
   taskId,

@@ -533,6 +533,18 @@ const INSTALL_MESSAGES = [
 
 const CLOUD_FILL_MESSAGES = [
   [
+    "页面已撤销，证据待同步",
+    "Page fill undone; evidence sync pending",
+    "ページの入力は取り消し済み、証拠の同期待ち",
+    "페이지 입력 취소 완료, 증거 동기화 대기"
+  ],
+  [
+    "页面已撤销，但工作台尚未确认收到证据。请不要再次撤销，直接选择“重试同步”。",
+    "The page fill was undone, but the workspace has not confirmed the evidence. Do not undo again; select “Retry sync”.",
+    "ページの入力は取り消しましたが、ワークスペースで証拠の受信を確認できていません。再度取り消さず「同期を再試行」を選んでください。",
+    "페이지 입력은 취소되었지만 워크스페이스가 증거를 확인하지 못했습니다. 다시 취소하지 말고 ‘동기화 재시도’를 선택하세요."
+  ],
+  [
     "当前招聘页面已经变化，请重新识别并核对预览。",
     "The recruitment page has changed. Inspect it again and review the preview.",
     "採用ページが変更されました。再検出してプレビューを確認してください。",

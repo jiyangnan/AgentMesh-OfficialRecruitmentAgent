@@ -980,11 +980,11 @@ class ProductClient:
 
     def cloud_fill_profile(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/cloud-assist-sessions/profile",
-            extra_headers={"X-ORA-Client-Protocol": "official-workbench-v1"})
+            extra_headers={"X-ORA-Client-Protocol": "official-workbench-v2"})
 
     def create_cloud_assist_session(self, payload, *, idempotency_key):
         return self._request("POST", "/api/v1/cloud-assist-sessions", payload,
-            extra_headers={"Idempotency-Key": idempotency_key, "X-ORA-Client-Protocol": "official-workbench-v1"})
+            extra_headers={"Idempotency-Key": idempotency_key, "X-ORA-Client-Protocol": "official-workbench-v2"})
 
     def _request(
         self,

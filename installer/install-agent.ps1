@@ -5,8 +5,8 @@ $BaseUrl = if ($env:ORA_INSTALL_BASE_URL) {
 } else {
     "https://recruit.agentmesh360.com"
 }
-$AdapterVersion = "0.1.14"
-$AdapterSha256 = "fa7c5a55ce368c429125e1c44dc77060e18ce53b79839fcaa01e7e916683eedc"
+$AdapterVersion = "0.1.15"
+$AdapterSha256 = "75c7ff81ad8e26a92690e267f2e7a74bcadc679fb380f19573a32224c6e95794"
 $SkillVersion = "0.3.8"
 $SkillSha256 = "45cbce03d86dce71fb308722a601f6484fb22eeac08228435be2e9c83bb942e6"
 $LocalAppData = if ($env:LOCALAPPDATA) {
