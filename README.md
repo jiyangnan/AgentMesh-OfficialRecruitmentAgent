@@ -41,7 +41,7 @@ ora-workbench configure --key <AGENTMESH_API_KEY>
 ora-workbench doctor
 ```
 
-API Key 可在 [AgentMesh360 个人中心](https://agentmesh360.com/account/) 获取。
+API Key 可在 [AgentMesh360 个人中心](https://agentmesh360.com/app/) 获取。
 
 ## Chrome 扩展
 
